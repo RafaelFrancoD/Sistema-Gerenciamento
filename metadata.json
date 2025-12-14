@@ -1,0 +1,5 @@
+{
+  "name": "SGF - Sistema de Gerenciamento de Férias",
+  "description": "Sistema para gestão de férias de times de QA, com controle de conflitos, skills e relatórios.",
+  "requestFramePermissions": []
+}
