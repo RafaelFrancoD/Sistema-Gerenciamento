@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, Printer } from 'lucide-react';
+import { Download, FileText, Mail } from 'lucide-react'; // Alterado Printer para Mail
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Employee, VacationRequest } from '../types';
@@ -22,24 +22,6 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
   const selectedVacation = vacations.find(v => v.id === selectedVacationId);
   const selectedEmployee = selectedVacation ? employees.find(e => e.id === selectedVacation.employeeId) : null;
 
-  const handlePrint = () => {
-    // Simple print simulation
-    const content = document.getElementById('report-preview');
-    if (content) {
-      const w = window.open();
-      w?.document.write(`
-        <html>
-          <head><title>Relatório de Férias</title></head>
-          <body style="font-family: sans-serif; padding: 40px;">
-            ${content.innerHTML}
-          </body>
-        </html>
-      `);
-      w?.document.close();
-      w?.print();
-    }
-  };
-
   const handleDownloadPdf = () => {
     if (!selectedEmployee || !selectedVacation) return;
 
@@ -52,32 +34,48 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
     doc.text('AVISO DE FÉRIAS', pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text('Documento Oficial - Uso Interno', pageWidth / 2, 26, { align: 'center' });
 
     // 2. Employee and Reference Info
+    const employeeInfoBody = [
+      [
+        { content: 'Colaborador:', styles: { fontStyle: 'bold' } },
+        selectedEmployee.name,
+        '',
+        '',
+      ],
+      [
+        { content: 'Time:', styles: { fontStyle: 'bold' } },
+        selectedEmployee.team,
+        '',
+        '',
+      ],
+      [
+        { content: 'Email:', styles: { fontStyle: 'bold' } },
+        selectedEmployee.email,
+        '',
+        '',
+      ],
+      [
+        { content: 'Admissão:', styles: { fontStyle: 'bold' } } ,
+        new Date(selectedEmployee.admissionDate + 'T00:00:00').toLocaleDateString('pt-BR'),
+        '',
+        '',
+      ],
+    ];
+
+    if (selectedEmployee.skills.length > 0) {
+      employeeInfoBody.push([
+        { content: 'Habilidades:', styles: { fontStyle: 'bold' } },
+        selectedEmployee.skills.join(', '),
+        '',
+        '',
+      ]);
+    }
+
     doc.autoTable({
       startY: 35,
       theme: 'plain',
-      body: [
-        [
-          { content: 'Colaborador:', styles: { fontStyle: 'bold' } },
-          selectedEmployee.name,
-          { content: 'Referência:', styles: { fontStyle: 'bold', halign: 'right' } },
-          `#${selectedVacation.id.slice(-6)}`,
-        ],
-        [
-          { content: 'Cargo:', styles: { fontStyle: 'bold' } },
-          selectedEmployee.role,
-          { content: 'Emitido em:', styles: { fontStyle: 'bold', halign: 'right' } },
-          new Date().toLocaleDateString('pt-BR'),
-        ],
-        [
-          { content: 'Time:', styles: { fontStyle: 'bold' } },
-          selectedEmployee.team,
-          '',
-          '',
-        ],
-      ],
+      body: employeeInfoBody,
       styles: { fontSize: 10, cellPadding: 1 },
       columnStyles: {
         0: { cellWidth: 25 },
@@ -87,7 +85,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
       }
     });
 
-    const finalY = (doc as any).lastAutoTable.finalY;
+    let finalY = (doc as any).lastAutoTable.finalY;
 
     // 3. Vacation Period Details
     doc.setFontSize(12);
@@ -96,32 +94,37 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
     doc.autoTable({
       startY: finalY + 18,
       theme: 'grid',
-      head: [['Data Início', 'Data Fim', 'Dias Gozados']],
+      head: [['Ano Aquisição', 'Data Início', 'Data Fim', 'Dias Gozados', 'Status']],
       body: [[
-        new Date(selectedVacation.startDate).toLocaleDateString('pt-BR'),
-        new Date(selectedVacation.endDate).toLocaleDateString('pt-BR'),
-        `${selectedVacation.days} dias`
+        selectedVacation.acquisitionYear || 'N/A',
+        new Date(selectedVacation.startDate + 'T00:00:00').toLocaleDateString('pt-BR'),
+        new Date(selectedVacation.endDate + 'T00:00:00').toLocaleDateString('pt-BR'),
+        `${selectedVacation.days} dias`,
+        selectedVacation.status === 'approved' ? 'Aprovado' : 'Planejado'
       ]],
       headStyles: { fillColor: [22, 160, 133], textColor: 255, fontStyle: 'bold' },
       styles: { halign: 'center' }
     });
 
-    const finalY2 = (doc as any).lastAutoTable.finalY;
+    finalY = (doc as any).lastAutoTable.finalY;
+
+    // Add special approval reason if exists
+    if (selectedVacation.specialApprovalReason) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Motivo da Aprovação Especial:', 14, finalY + 10);
+      doc.setFont('helvetica', 'normal');
+      const reasonText = doc.splitTextToSize(selectedVacation.specialApprovalReason, pageWidth - 28);
+      doc.text(reasonText, 14, finalY + 15);
+      finalY += reasonText.length * 5 + 10; // Adjust Y position
+    }
 
     // 4. Formal Text
-    const text = `Comunicamos que, de acordo com as normas internas e legislação vigente, suas férias foram aprovadas para o período supracitado. Certifique-se de realizar a passagem de conhecimento para o seu substituto técnico antes da data de início.`;
+    const text = `Comunicamos que, de acordo com as normas internas e legislação vigente, suas férias foram aprovadas para o período supracitado. Certifique-se de realizar a passagem de conhecimento para o seu substituto técnico antes da data de início. Além de seguir as demais diretrizes contidas no PCR de férias.`;
     const splitText = doc.splitTextToSize(text, pageWidth - 28);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text(splitText, 14, finalY2 + 15);
-
-    // 5. Signatures
-    const signatureY = finalY2 + 50;
-    doc.line(30, signatureY, 90, signatureY); // Line for first signature
-    doc.text('Assinatura da Gestão', 60, signatureY + 5, { align: 'center' });
-    
-    doc.line(pageWidth - 90, signatureY, pageWidth - 30, signatureY); // Line for second signature
-    doc.text('Assinatura do Colaborador', pageWidth - 60, signatureY + 5, { align: 'center' });
+    doc.text(splitText, 14, finalY + 15);
 
     // 6. Footer
     const pageCount = doc.internal.pages.length;
@@ -135,6 +138,37 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
 
     // Save the PDF
     doc.save(`aviso_ferias_${selectedEmployee.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleSendEmail = () => {
+    if (!selectedEmployee || !selectedVacation) return;
+
+    const subject = `Aprovação de Férias - ${selectedEmployee.name}`;
+    let body = `Prezado(a) ${selectedEmployee.name},\n\n` +
+                 `Comunicamos que suas férias foram aprovadas para o período de ` +
+                 `${new Date(selectedVacation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ` +
+                 `${new Date(selectedVacation.endDate + 'T00:00:00').toLocaleDateString('pt-BR')}, ` +
+                 `totalizando ${selectedVacation.days} dias.\n\n` +
+                 `Ano de Aquisição: ${selectedVacation.acquisitionYear || 'N/A'}\n` +
+                 `Status: ${selectedVacation.status === 'approved' ? 'Aprovado' : 'Planejado'}\n\n` +
+                 `Time: ${selectedEmployee.team}\n` +
+                 `Admissão: ${new Date(selectedEmployee.admissionDate + 'T00:00:00').toLocaleDateString('pt-BR')}\n`;
+    
+    if (selectedEmployee.skills.length > 0) {
+      body += `Habilidades: ${selectedEmployee.skills.join(', ')}\n\n`;
+    } else {
+      body += '\n';
+    }
+
+    if (selectedVacation.specialApprovalReason) {
+      body += `Motivo da Aprovação Especial: ${selectedVacation.specialApprovalReason}\n\n`;
+    }
+
+    body += `Por favor, certifique-se de realizar a passagem de conhecimento para o seu substituto técnico antes da data de início.\n\n` +
+            `Atenciosamente,\nGestão de RH`;
+    
+    // Usar window.location.href para abrir o cliente de e-mail padrão
+    window.location.href = `mailto:${selectedEmployee.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   return (
@@ -161,7 +195,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
                 >
                   <p className="font-bold text-slate-800">{emp?.name}</p>
                   <p className="text-xs text-slate-500">
-                    {new Date(vac.startDate).toLocaleDateString()} a {new Date(vac.endDate).toLocaleDateString()}
+                    {new Date(vac.startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(vac.endDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                   </p>
                 </div>
               );
@@ -175,64 +209,75 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations }) => {
               <div id="report-preview" className="prose max-w-none text-slate-800">
                 <div className="text-center border-b-2 border-slate-800 pb-4 mb-8">
                   <h1 className="text-2xl font-bold uppercase tracking-wide">Aviso de Férias</h1>
-                  <p className="text-sm text-slate-500">Documento Oficial - Uso Interno</p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-8 mb-8">
                   <div>
                     <h4 className="text-xs font-bold uppercase text-slate-400 mb-1">Colaborador</h4>
                     <p className="text-lg font-medium">{selectedEmployee.name}</p>
-                    <p className="text-sm text-slate-600">{selectedEmployee.role}</p>
-                    <p className="text-sm text-slate-600">{selectedEmployee.team}</p>
+                    <p className="text-sm text-slate-600">Time: {selectedEmployee.team}</p>
+                    <p className="text-sm text-slate-600">Email: {selectedEmployee.email}</p>
+                    <p className="text-sm text-slate-600">Admissão: {new Date(selectedEmployee.admissionDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                    {selectedEmployee.skills.length > 0 && (
+                      <p className="text-sm text-slate-600">Habilidades: {selectedEmployee.skills.join(', ')}</p>
+                    )}
                   </div>
                   <div className="text-right">
-                    <h4 className="text-xs font-bold uppercase text-slate-400 mb-1">Referência</h4>
-                    <p className="text-lg font-medium">#{selectedVacation.id.slice(-6)}</p>
-                    <p className="text-sm text-slate-600">Emitido em: {new Date().toLocaleDateString()}</p>
+                    <p className="text-sm text-slate-600">Emitido em: {new Date().toLocaleDateString('pt-BR')}</p>
                   </div>
                 </div>
 
                 <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mb-8">
                   <h3 className="text-sm font-bold uppercase text-blue-900 mb-4">Detalhes do Período Concessivo</h3>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-5 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase">Ano Aquisição</p>
+                      <p className="font-bold text-xl">{selectedVacation.acquisitionYear || 'N/A'}</p>
+                    </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase">Data Início</p>
-                      <p className="font-bold text-xl">{new Date(selectedVacation.startDate).toLocaleDateString()}</p>
+                      <p className="font-bold text-xl">{new Date(selectedVacation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase">Data Fim</p>
-                      <p className="font-bold text-xl">{new Date(selectedVacation.endDate).toLocaleDateString()}</p>
+                      <p className="font-bold text-xl">{new Date(selectedVacation.endDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase">Dias Gozados</p>
                       <p className="font-bold text-xl">{selectedVacation.days} dias</p>
                     </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase">Status</p>
+                      <p className="font-bold text-xl">{selectedVacation.status === 'approved' ? 'Aprovado' : 'Planejado'}</p>
+                    </div>
                   </div>
                 </div>
+
+                {selectedVacation.specialApprovalReason && (
+                  <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 mb-8">
+                    <h4 className="text-xs font-bold uppercase text-orange-700 mb-2">Motivo da Aprovação Especial</h4>
+                    <p className="text-sm text-orange-800">{selectedVacation.specialApprovalReason}</p>
+                  </div>
+                )}
 
                 <p className="mb-8 leading-relaxed">
                   Comunicamos que, de acordo com as normas internas e legislação vigente, suas férias foram aprovadas para o período supracitado. 
-                  Certifique-se de realizar a passagem de conhecimento para o seu substituto técnico antes da data de início.
+                  Certifique-se de realizar a passagem de conhecimento para o seu substituto técnico antes da data de início. Além de seguir as demais diretrizes contidas no PCR de férias.
                 </p>
 
-                <div className="mt-12 flex justify-between gap-12 pt-8 border-t border-slate-300">
-                  <div className="flex-1 text-center">
-                    <div className="h-10 border-b border-slate-400 mb-2"></div>
-                    <p className="text-xs uppercase font-bold text-slate-500">Assinatura da Gestão</p>
-                  </div>
-                  <div className="flex-1 text-center">
-                    <div className="h-10 border-b border-slate-400 mb-2"></div>
-                    <p className="text-xs uppercase font-bold text-slate-500">Assinatura do Colaborador</p>
-                  </div>
-                </div>
               </div>
 
               <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3 print:hidden">
                 <button 
-                  onClick={handlePrint}
-                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium flex items-center gap-2"
+                  onClick={handleSendEmail}
+                  disabled={selectedVacation.status !== 'approved'}
+                  className={`px-4 py-2 border rounded-lg font-medium flex items-center gap-2 ${
+                    selectedVacation.status === 'approved'
+                      ? 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                      : 'border-slate-300 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
-                  <Printer size={18} /> Imprimir
+                  <Mail size={18} /> Enviar por Email
                 </button>
                 <button 
                   onClick={handleDownloadPdf}

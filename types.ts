@@ -1,28 +1,20 @@
-export interface Skill {
-  id: string;
-  name: string;
+export interface VacationRequest {
+  id: number | string; // Changed to allow string for temporary IDs
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  status: 'pending' | 'approved' | 'rejected' | 'planned'; // Added 'planned' status
+  acquisitionYear?: number; // Added acquisitionYear
+  specialApprovalReason?: string; // Added for RN02, RN04
+  days?: number; // Number of vacation days
 }
 
 export interface Employee {
   id: string;
   name: string;
   role: string;
-  team: string; // Free text
-  admissionDate: string; // ISO Date YYYY-MM-DD
-  skills: string[]; // List of Skill Names (Free text)
+  team: string;
   email: string;
-}
-
-export interface VacationRequest {
-  id: string;
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  status: 'planned' | 'approved' | 'completed';
-  days: number;
-}
-
-export interface VacationRuleError {
-  hasError: boolean;
-  message: string;
+  admissionDate: string;
+  skills: string[];
 }

@@ -1,18 +1,19 @@
-import React from 'react';
-import { LayoutDashboard, Users, Calendar, FileText, X } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, FileText, X, CheckSquare, BellRing } from 'lucide-react'; // Added BellRing
 
 interface SidebarProps {
   currentView: string;
   onChangeView: (view: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  hasAlerts: boolean; // Added hasAlerts prop
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, onClose, hasAlerts }) => {
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, alert: hasAlerts }, // Added alert property
     { id: 'employees', label: 'Colaboradores', icon: Users },
-    { id: 'vacations', label: 'Férias', icon: Calendar },
+    { id: 'vacations', label: 'Solicitações de Férias', icon: Calendar },
+    { id: 'approvals', label: 'Aprovações', icon: CheckSquare },
     { id: 'reports', label: 'Relatórios', icon: FileText },
   ];
 
@@ -61,6 +62,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isO
               >
                 <Icon size={20} />
                 <span className="font-medium">{item.label}</span>
+                {item.alert && ( // Display alert icon if item.alert is true
+                  <BellRing size={16} className="text-yellow-400 animate-pulse ml-auto" />
+                )}
               </button>
             );
           })}

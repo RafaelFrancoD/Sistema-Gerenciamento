@@ -1,16 +1,29 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Plus, Edit2, Trash2, X, Save, Calendar, Mail, Briefcase, Tag, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { Employee } from '../types';
+import { Employee, VacationRequest } from '../types';
 import { TEAMS } from '../constants';
 
 interface EmployeeManagerProps {
   employees: Employee[];
   setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>;
+  vacations: VacationRequest[]; // Added vacations prop for RF03
 }
 
 type SortKey = keyof Employee | 'skills';
 
-export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, setEmployees }) => {
+export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, setEmployees, vacations }) => {
+  const formatDate = (iso?: string) => {
+    if (!iso) return '';
+    // Prefer constructing Date with components to avoid timezone shift (off-by-one)
+    const parts = iso.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      return new Date(y, m, d).toLocaleDateString('pt-BR');
+    }
+    try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -20,7 +33,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
 
   // Form State
   const [name, setName] = useState('');
-  const [role, setRole] = useState('QA Junior');
+  const [role, setRole] = useState('QA Junior'); // Default role
   const [team, setTeam] = useState('');
   const [email, setEmail] = useState('');
   const [admissionDate, setAdmissionDate] = useState('');
@@ -101,7 +114,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
   };
 
   const handleSave = () => {
-    if (!name || !admissionDate) return alert("Nome e Data de Admissão são obrigatórios");
+    // RN08: Cadastro, edição e exclusão de colaboradores com validações.
+    if (!name.trim()) return alert("Nome é obrigatório.");
+    if (!admissionDate) return alert("Data de Admissão é obrigatória.");
+    if (!role.trim()) return alert("Cargo é obrigatório."); // Ensure role is also validated
 
     const trimmedName = name.trim();
     const normalizedName = trimmedName.toLowerCase();
@@ -117,12 +133,24 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       return;
     }
 
+    // Verificar duplicidade por email (se fornecido)
+    if (email.trim()) {
+      const emailDup = employees.some(emp => {
+        if (editingId && emp.id === editingId) return false;
+        return (emp.email || '').trim().toLowerCase() === email.trim().toLowerCase();
+      });
+      if (emailDup) {
+        alert(`Já existe um colaborador cadastrado com o email "${email.trim()}".`);
+        return;
+      }
+    }
+
     const newEmployee: Employee = {
       id: editingId || Date.now().toString(),
       name: trimmedName,
-      role,
-      team: team || 'Sem Time',
-      email: email || 'email@pendente.com',
+      role: role.trim(), // Ensure role is trimmed
+      team: team.trim() || 'Sem Time',
+      email: email.trim() || 'email@pendente.com',
       admissionDate,
       skills: selectedSkills
     };
@@ -135,12 +163,23 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
     setIsModalOpen(false);
   };
 
-  // Função de Exclusão dentro do Modal
+  // RF03 – Exclusão de colaborador (bloquear se tiver férias futuras).
   const handleDeleteCurrent = () => {
     if (!editingId) return;
 
-    // Confirmação nativa robusta
-    const confirmDelete = window.confirm(`ATENÇÃO: Você tem certeza que deseja excluir o colaborador "${name}" do sistema?`);
+    const employeeToDelete = employees.find(emp => emp.id === editingId);
+    if (!employeeToDelete) return;
+
+    const hasFutureVacations = vacations.some(vac => 
+      vac.employeeId === editingId && new Date(vac.startDate) > new Date() && (vac.status === 'planned' || vac.status === 'approved')
+    );
+
+    if (hasFutureVacations) {
+      alert(`Não é possível excluir o colaborador "${employeeToDelete.name}" pois ele possui férias futuras planejadas ou aprovadas.`);
+      return;
+    }
+
+    const confirmDelete = window.confirm(`ATENÇÃO: Você tem certeza que deseja excluir o colaborador "${employeeToDelete.name}" do sistema? Esta ação é irreversível.`);
     
     if (confirmDelete) {
       setEmployees(prev => prev.filter(e => e.id !== editingId));
@@ -163,94 +202,118 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
     setSelectedSkills(prev => prev.filter(s => s !== skillToRemove));
   };
 
-  // --- IMPORT LOGIC ---
+  // --- IMPORT LOGIC (RN10) ---
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
 
-  const processCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const processFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
-      const lines = text.split(/\r\n|\n/);
-      const newEmployees: Employee[] = [];
-      let importedCount = 0;
-      let duplicateCount = 0;
+    if (fileExtension === 'csv' || fileExtension === 'txt') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (!text) return;
+        processCSV(text);
+      };
+      reader.readAsText(file);
+    } else if (fileExtension === 'xlsx') {
+      alert('Importação de arquivos Excel (.xlsx) não é suportada nesta versão. Por favor, use CSV.');
+      // RN10: Para implementar a importação de Excel, seria necessário usar uma biblioteca como 'xlsx'.
+      // Exemplo de uso (requer instalação de 'xlsx'):
+      // import * as XLSX from 'xlsx';
+      // const reader = new FileReader();
+      // reader.onload = (e) => {
+      //   const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      //   const workbook = XLSX.read(data, { type: 'array' });
+      //   const sheetName = workbook.SheetNames[0];
+      //   const worksheet = workbook.Sheets[sheetName];
+      //   const json = XLSX.utils.sheet_to_json(worksheet);
+      //   console.log(json); // Process JSON data
+      //   alert('Dados do Excel lidos no console. Implementação de processamento pendente.');
+      // };
+      // reader.readAsArrayBuffer(file);
+    } else {
+      alert('Formato de arquivo não suportado. Por favor, use .csv, .txt ou .xlsx.');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
-      const existingNames = new Set(employees.map(emp => emp.name.trim().toLowerCase()));
+  const processCSV = (text: string) => {
+    const lines = text.split(/\r\n|\n/);
+    const newEmployees: Employee[] = [];
+    let importedCount = 0;
+    let duplicateCount = 0;
 
-      lines.forEach((line, index) => {
-        if (!line.trim()) return;
-        const cols = line.split(/[,;]/);
-        let empName = cols[0]?.trim();
-        let dateStr = cols[1]?.trim();
+    const existingNames = new Set(employees.map(emp => emp.name.trim().toLowerCase()));
 
-        if (!empName || !dateStr) return;
-        if (index === 0 && (empName.toLowerCase().includes('nome') || empName.toLowerCase().includes('name'))) return;
+    lines.forEach((line, index) => {
+      if (!line.trim()) return;
+      const cols = line.split(/[,;]/);
+      let empName = cols[0]?.trim();
+      let dateStr = cols[1]?.trim();
+      let empRole = cols[2]?.trim() || 'QA Junior'; // Assuming role can be in CSV
+      let empTeam = cols[3]?.trim() || 'Sem Time'; // Assuming team can be in CSV
+      let empEmail = cols[4]?.trim() || 'email@pendente.com'; // Assuming email can be in CSV
+      let empSkills = cols[5]?.trim() ? cols[5].split('|').map(s => s.trim()) : []; // Assuming skills are pipe-separated
 
-        const cleanName = empName.replace(/["']/g, "");
-        const normalizedName = cleanName.toLowerCase();
+      if (!empName || !dateStr) return;
+      if (index === 0 && (empName.toLowerCase().includes('nome') || empName.toLowerCase().includes('name'))) return;
 
-        // Verificar duplicidade
-        if (existingNames.has(normalizedName)) {
-          duplicateCount++;
-          return;
-        }
+      const cleanName = empName.replace(/["']/g, "");
+      const normalizedName = cleanName.toLowerCase();
 
-        let formattedDate = '';
-        if (dateStr.includes('/')) {
-          const [day, month, year] = dateStr.split('/');
-          if (day && month && year && year.length === 4) {
-            formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-          }
-        } else if (dateStr.includes('-')) {
-          formattedDate = dateStr;
-        }
-
-        if (isNaN(Date.parse(formattedDate))) return;
-
-        existingNames.add(normalizedName);
-
-        newEmployees.push({
-          id: `imp-${Date.now()}-${index}`,
-          name: cleanName,
-          role: 'QA Junior',
-          team: 'Pendente',
-          email: '',
-          admissionDate: formattedDate,
-          skills: []
-        });
-        importedCount++;
-      });
-
-      if (newEmployees.length > 0) {
-        // Uso de callback para garantir que temos o estado mais recente
-        setEmployees(prev => {
-          const updatedList = [...prev, ...newEmployees];
-          return updatedList;
-        });
-        
-        let msg = `${importedCount} colaboradores importados com sucesso!`;
-        if (duplicateCount > 0) {
-          msg += `\n\n${duplicateCount} já existiam e não foram duplicados.`;
-        }
-        alert(msg);
-      } else {
-        if (duplicateCount > 0) {
-          alert(`Nenhum novo dado. Todos os ${duplicateCount} nomes já existem.`);
-        } else {
-          alert("Erro ou nenhum dado válido encontrado.");
-        }
+      // Verificar duplicidade
+      if (existingNames.has(normalizedName)) {
+        duplicateCount++;
+        return;
       }
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    };
 
-    reader.readAsText(file);
+      let formattedDate = '';
+      if (dateStr.includes('/')) {
+        const [day, month, year] = dateStr.split('/');
+        if (day && month && year && year.length === 4) {
+          formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+      } else if (dateStr.includes('-')) {
+        formattedDate = dateStr;
+      }
+
+      if (isNaN(Date.parse(formattedDate))) return;
+
+      existingNames.add(normalizedName);
+
+      newEmployees.push({
+        id: `imp-${Date.now()}-${index}`,
+        name: cleanName,
+        role: empRole,
+        team: empTeam,
+        email: empEmail,
+        admissionDate: formattedDate,
+        skills: empSkills
+      });
+      importedCount++;
+    });
+
+    if (newEmployees.length > 0) {
+      setEmployees(prev => [...prev, ...newEmployees]);
+      
+      let msg = `${importedCount} colaboradores importados com sucesso!`;
+      if (duplicateCount > 0) {
+        msg += `\n\n${duplicateCount} já existiam e não foram duplicados.`;
+      }
+      alert(msg);
+    } else {
+      if (duplicateCount > 0) {
+        alert(`Nenhum novo dado. Todos os ${duplicateCount} nomes já existem.`);
+      } else {
+        alert("Erro ou nenhum dado válido encontrado.");
+      }
+    }
   };
 
   return (
@@ -258,11 +321,11 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-bold text-blue-900">Gerenciar Colaboradores</h2>
-          <p className="text-slate-500 text-sm">Gerencie sua equipe manualmente ou importe via CSV</p>
+          <p className="text-slate-500 text-sm">Gerencie sua equipe manualmente ou importe via CSV/Excel</p>
         </div>
         
         <div className="flex flex-wrap gap-3 w-full md:w-auto">
-          <input type="file" ref={fileInputRef} onChange={processCSV} accept=".csv,.txt" className="hidden" />
+          <input type="file" ref={fileInputRef} onChange={processFile} accept=".csv,.txt,.xlsx" className="hidden" />
           
           <button onClick={handleImportClick} className="flex-1 md:flex-none bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-sm transition-all">
             <FileSpreadsheet size={20} /> <span className="hidden sm:inline">Importar Planilha</span>
@@ -270,7 +333,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
           </button>
 
           <button onClick={() => handleOpenModal()} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all hover:scale-105">
-            <Plus size={20} /> <span className="font-bold">Novo QA</span>
+            <Plus size={20} /> <span className="font-bold">Novo Colaborador</span>
           </button>
         </div>
       </div>
@@ -324,7 +387,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                     <td className="p-5 text-slate-600">
                       <div className="flex items-center gap-2">
                         <Calendar size={14} className="text-blue-300" />
-                        {new Date(emp.admissionDate).toLocaleDateString('pt-BR')}
+                        {formatDate(emp.admissionDate)}
                       </div>
                     </td>
                     <td className="p-5">
@@ -392,7 +455,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                   <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
                     <Calendar size={16} />
                   </div>
-                  <span>Adm: {new Date(emp.admissionDate).toLocaleDateString('pt-BR')}</span>
+                  <span>Adm: {formatDate(emp.admissionDate)}</span>
                 </div>
               </div>
 

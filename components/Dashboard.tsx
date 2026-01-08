@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { AlertTriangle, CheckCircle, Users, Clock, Zap, Send, X, Mail } from 'lucide-react';
 import { Employee, VacationRequest } from '../types';
-import { calculateDueDate, getDaysUntilDue } from '../utils/dateLogic';
+import { calculateVacationDueDate, getDaysUntilDue } from '../utils/dateLogic'; // Updated import
 
 interface DashboardProps {
   employees: Employee[];
@@ -25,11 +25,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     return now >= start && now <= end;
   }).length;
 
-  const alerts = employees.map(emp => {
-    const dueDate = calculateDueDate(emp.admissionDate);
-    const daysLeft = getDaysUntilDue(dueDate);
-    return { ...emp, daysLeft };
-  }).filter(e => e.daysLeft < 60).sort((a, b) => a.daysLeft - b.daysLeft);
+  // RN07 – Alerta de vencimento 30 dias antes.
+  const alerts = employees.flatMap(emp => {
+    const currentYear = new Date().getFullYear();
+    const potentialAlerts = [];
+
+    // Check for current year and next year as potential acquisition years
+    // This is a pragmatic approach for dashboard alerts without full acquisition period management
+    for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
+      const acquisitionYear = currentYear + yearOffset;
+      const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
+      const daysLeft = getDaysUntilDue(dueDate);
+
+      // Only add if within the alert threshold and not already taken for this acquisition year
+      const vacationTakenForAcquisitionYear = vacations.some(
+        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
+      );
+
+      if (daysLeft < 30 && !vacationTakenForAcquisitionYear) { // RN07: 30 days threshold
+        potentialAlerts.push({ ...emp, daysLeft, acquisitionYear, dueDate });
+      }
+    }
+    return potentialAlerts;
+  })
+  .sort((a, b) => a.daysLeft - b.daysLeft) // Sort by days left
+  .filter((alert, index, self) => // Remove duplicates for the same employee, keep earliest due date
+    index === self.findIndex((a) => (
+      a.id === alert.id
+    ))
+  );
 
   const pendingVacations = alerts.length;
 
@@ -125,7 +149,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         {[
           { icon: Users, label: "Total Colaboradores", value: totalEmployees, color: "blue" },
           { icon: CheckCircle, label: "Férias Ativas", value: activeVacations, color: "green" },
-          { icon: Clock, label: "A vencer (60 dias)", value: pendingVacations, color: "orange" },
+          { icon: Clock, label: "A vencer (30 dias)", value: pendingVacations, color: "orange" },
           { icon: Zap, label: "Eficiência do Time", value: "98%", color: "purple" }
         ].map((kpi, idx) => (
           <div 
@@ -255,7 +279,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                       <div className="w-full bg-black/30 h-1.5 rounded-full mt-3 overflow-hidden">
                         <div 
                           className="h-full bg-red-400 rounded-full" 
-                          style={{ width: `${Math.max(0, 100 - (alert.daysLeft / 60) * 100)}%` }}
+                          style={{ width: `${Math.max(0, 100 - (alert.daysLeft / 30) * 100)}%` }}
                         ></div>
                       </div>
                     </div>

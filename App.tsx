@@ -3,10 +3,12 @@ import { Menu } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { EmployeeManager } from './components/EmployeeManager';
-import { VacationManager } from './components/VacationManager';
+import VacationManager from './components/VacationManager';
 import { Reports } from './components/Reports';
+import { ApprovalManager } from './components/ApprovalManager';
 import { INITIAL_EMPLOYEES, INITIAL_VACATIONS } from './constants';
 import { Employee, VacationRequest } from './types';
+import { calculateVacationDueDate, getDaysUntilDue } from './utils/dateLogic'; // Import new functions
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -18,6 +20,7 @@ function App() {
   const [employees, setEmployees] = useState<Employee[]>(() => {
     if (typeof window !== 'undefined') {
       try {
+        // localStorage.removeItem('sgf_employees'); // Uncomment to clear storage
         const savedEmployees = localStorage.getItem('sgf_employees');
         // Se houver dados salvos, usa eles. Se não, usa lista vazia (INITIAL_EMPLOYEES)
         return savedEmployees ? JSON.parse(savedEmployees) : INITIAL_EMPLOYEES;
@@ -33,6 +36,7 @@ function App() {
   const [vacations, setVacations] = useState<VacationRequest[]>(() => {
     if (typeof window !== 'undefined') {
       try {
+        // localStorage.removeItem('sgf_vacations'); // Uncomment to clear storage
         const savedVacations = localStorage.getItem('sgf_vacations');
         return savedVacations ? JSON.parse(savedVacations) : INITIAL_VACATIONS;
       } catch (error) {
@@ -61,16 +65,39 @@ function App() {
     }
   }, [vacations]);
 
+  // Calculate hasAlerts for Sidebar (RN07)
+  const hasAlerts = React.useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return employees.some(emp => {
+      for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
+        const acquisitionYear = currentYear + yearOffset;
+        const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
+        const daysLeft = getDaysUntilDue(dueDate);
+
+        const vacationTakenForAcquisitionYear = vacations.some(
+          v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
+        );
+
+        if (daysLeft < 30 && !vacationTakenForAcquisitionYear) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }, [employees, vacations]);
+
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
         return <Dashboard employees={employees} vacations={vacations} />;
       case 'employees':
-        return <EmployeeManager employees={employees} setEmployees={setEmployees} />;
+        return <EmployeeManager employees={employees} setEmployees={setEmployees} vacations={vacations} />;
       case 'vacations':
         return <VacationManager employees={employees} vacations={vacations} setVacations={setVacations} />;
       case 'reports':
         return <Reports employees={employees} vacations={vacations} />;
+      case 'approvals':
+        return <ApprovalManager employees={employees} vacations={vacations} setVacations={setVacations} />;
       default:
         return <Dashboard employees={employees} vacations={vacations} />;
     }
@@ -83,6 +110,7 @@ function App() {
         onChangeView={setCurrentView} 
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        hasAlerts={hasAlerts} // Pass hasAlerts to Sidebar
       />
       
       <main className={`flex-1 transition-all duration-300 md:ml-64 p-4 md:p-8 ${isSidebarOpen ? 'overflow-hidden' : ''}`}>
@@ -104,8 +132,9 @@ function App() {
             <h1 className="text-2xl font-bold text-slate-900">
               {currentView === 'dashboard' && 'Dashboard'}
               {currentView === 'employees' && 'Colaboradores'}
-              {currentView === 'vacations' && 'Férias'}
+              {currentView === 'vacations' && 'Solicitações de Férias'}
               {currentView === 'reports' && 'Relatórios'}
+              {currentView === 'approvals' && 'Aprovações'}
             </h1>
             <p className="text-slate-500 text-sm">Bem-vindo ao Sistema de Gerenciamento de Férias</p>
           </div>
