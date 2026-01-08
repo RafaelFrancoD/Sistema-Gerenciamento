@@ -1,3 +1,8 @@
+export interface Skill {
+  id: string;
+  name: string;
+}
+
 export interface VacationRequest {
   id: number | string; // Changed to allow string for temporary IDs
   employeeId: string;

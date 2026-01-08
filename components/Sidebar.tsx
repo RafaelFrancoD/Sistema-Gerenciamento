@@ -1,3 +1,4 @@
+import React from 'react';
 import { LayoutDashboard, Users, Calendar, FileText, X, CheckSquare, BellRing } from 'lucide-react'; // Added BellRing
 
 interface SidebarProps {

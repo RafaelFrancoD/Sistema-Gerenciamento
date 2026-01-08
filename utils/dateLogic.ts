@@ -369,7 +369,7 @@ export function validateVacationRequest(
 
 
   // Check for general date range conflicts with other employees' vacations
-  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, request.id);
+  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
   if (conflictResult.conflict) {
     return { isValid: false, message: conflictResult.message };
   }
