@@ -3,15 +3,17 @@ export interface Skill {
   name: string;
 }
 
+export type VacationStatus = 'pending' | 'approved' | 'rejected' | 'planned' | 'notified';
+
 export interface VacationRequest {
-  id: number | string; // Changed to allow string for temporary IDs
+  id: number | string;
   employeeId: string;
   startDate: string;
   endDate: string;
-  status: 'pending' | 'approved' | 'rejected' | 'planned' | 'notified'; // Added 'notified' status
-  acquisitionYear?: number; // Added acquisitionYear
-  specialApprovalReason?: string; // Added for RN02, RN04
-  days?: number; // Number of vacation days
+  status: VacationStatus;
+  acquisitionYear?: number;
+  specialApprovalReason?: string;
+  days?: number;
 }
 
 export interface Employee {

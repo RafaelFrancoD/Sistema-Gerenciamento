@@ -315,7 +315,7 @@ export function getSuggestedDatesForMonth(
       dates.push(startDate);
     } else {
       // RN06: exibir a regra infringida
-      const impedimentMessage = `Período começando em ${startDate.toLocaleDateString('pt-BR')}: ${validationResult.message}`;
+      const impedimentMessage = `Período começando em ${startDate.toLocaleDateString('pt-BR')}: ${validationResult.messages.join(', ')}`;
       if (!impediments.includes(impedimentMessage)) { // Avoid duplicate messages for the same reason
         impediments.push(impedimentMessage);
       }
