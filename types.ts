@@ -3,6 +3,11 @@ export interface Skill {
   name: string;
 }
 
+export interface Skill {
+  id: string;
+  name: string;
+}
+
 export type VacationStatus = 'pending' | 'approved' | 'rejected' | 'planned' | 'notified';
 
 export interface VacationRequest {
