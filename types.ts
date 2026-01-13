@@ -8,7 +8,7 @@ export interface VacationRequest {
   employeeId: string;
   startDate: string;
   endDate: string;
-  status: 'pending' | 'approved' | 'rejected' | 'planned'; // Added 'planned' status
+  status: 'pending' | 'approved' | 'rejected' | 'planned' | 'notified'; // Added 'notified' status
   acquisitionYear?: number; // Added acquisitionYear
   specialApprovalReason?: string; // Added for RN02, RN04
   days?: number; // Number of vacation days

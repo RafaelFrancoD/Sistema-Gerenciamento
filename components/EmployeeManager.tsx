@@ -1,5 +1,6 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Save, Calendar, Mail, Briefcase, Tag, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Employee, VacationRequest } from '../types';
 import { TEAMS } from '../constants';
 
@@ -39,8 +40,15 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
   const [admissionDate, setAdmissionDate] = useState('');
   
   // Skill State
+  const [allSkills, setAllSkills] = useState<string[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
+
+  // Effect to populate allSkills from employees
+  useEffect(() => {
+    const skills = new Set(employees.flatMap(emp => emp.skills));
+    setAllSkills(Array.from(skills).sort());
+  }, [employees]);
 
   // --- SORTING LOGIC ---
   const sortedEmployees = useMemo(() => {
@@ -150,7 +158,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       name: trimmedName,
       role: role.trim(), // Ensure role is trimmed
       team: team.trim() || 'Sem Time',
-      email: email.trim() || 'email@pendente.com',
+      email: email.trim(),
       admissionDate,
       skills: selectedSkills
     };
@@ -164,14 +172,11 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
   };
 
   // RF03 – Exclusão de colaborador (bloquear se tiver férias futuras).
-  const handleDeleteCurrent = () => {
-    if (!editingId) return;
-
-    const employeeToDelete = employees.find(emp => emp.id === editingId);
+  const handleDelete = (employeeToDelete: Employee) => {
     if (!employeeToDelete) return;
 
     const hasFutureVacations = vacations.some(vac => 
-      vac.employeeId === editingId && new Date(vac.startDate) > new Date() && (vac.status === 'planned' || vac.status === 'approved')
+      vac.employeeId === employeeToDelete.id && new Date(vac.startDate) > new Date() && (vac.status === 'planned' || vac.status === 'approved')
     );
 
     if (hasFutureVacations) {
@@ -182,19 +187,28 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
     const confirmDelete = window.confirm(`ATENÇÃO: Você tem certeza que deseja excluir o colaborador "${employeeToDelete.name}" do sistema? Esta ação é irreversível.`);
     
     if (confirmDelete) {
-      setEmployees(prev => prev.filter(e => e.id !== editingId));
-      setIsModalOpen(false);
+      setEmployees(prev => prev.filter(e => e.id !== employeeToDelete.id));
+      // Se o colaborador deletado estava sendo editado no modal, feche o modal
+      if (isModalOpen && editingId === employeeToDelete.id) {
+        setIsModalOpen(false);
+      }
     }
   };
 
-  const handleAddSkill = (e?: React.KeyboardEvent) => {
-    if (e && e.key !== 'Enter') return;
+  const handleAddSkill = (e?: React.KeyboardEvent | React.MouseEvent) => {
+    if (e instanceof KeyboardEvent && e.key !== 'Enter') return;
     e?.preventDefault(); 
 
     const trimmed = skillInput.trim();
     if (trimmed && !selectedSkills.includes(trimmed)) {
-      setSelectedSkills([...selectedSkills, trimmed]);
+      const newSkills = [...selectedSkills, trimmed];
+      setSelectedSkills(newSkills);
       setSkillInput('');
+
+      // Add to global list if it's new
+      if (!allSkills.includes(trimmed)) {
+        setAllSkills(prev => [...prev, trimmed].sort());
+      }
     }
   };
 
@@ -203,117 +217,124 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
   };
 
   // --- IMPORT LOGIC (RN10) ---
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleImportClick = () => fileInputRef.current?.click();
 
   const processFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    const reader = new FileReader();
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
-    if (fileExtension === 'csv' || fileExtension === 'txt') {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result as string;
-        if (!text) return;
-        processCSV(text);
-      };
-      reader.readAsText(file);
-    } else if (fileExtension === 'xlsx') {
-      alert('Importação de arquivos Excel (.xlsx) não é suportada nesta versão. Por favor, use CSV.');
-      // RN10: Para implementar a importação de Excel, seria necessário usar uma biblioteca como 'xlsx'.
-      // Exemplo de uso (requer instalação de 'xlsx'):
-      // import * as XLSX from 'xlsx';
-      // const reader = new FileReader();
-      // reader.onload = (e) => {
-      //   const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      //   const workbook = XLSX.read(data, { type: 'array' });
-      //   const sheetName = workbook.SheetNames[0];
-      //   const worksheet = workbook.Sheets[sheetName];
-      //   const json = XLSX.utils.sheet_to_json(worksheet);
-      //   console.log(json); // Process JSON data
-      //   alert('Dados do Excel lidos no console. Implementação de processamento pendente.');
-      // };
-      // reader.readAsArrayBuffer(file);
-    } else {
-      alert('Formato de arquivo não suportado. Por favor, use .csv, .txt ou .xlsx.');
-    }
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        if (!data) throw new Error("Não foi possível ler o arquivo.");
+        let jsonData: any[];
+
+        if (fileExtension === 'xlsx') {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        } else if (fileExtension === 'csv' || fileExtension === 'txt') {
+          const text = new TextDecoder("utf-8").decode(data as ArrayBuffer);
+          jsonData = text.split(/\r\n|\n/).filter(Boolean).map(line => {
+            const cols = line.split(/[,;]/);
+            return {
+              "Nome": cols[0],
+              "Data de Admissão": cols[1],
+              "Cargo": cols[2],
+              "Time": cols[3],
+              "Email": cols[4],
+              "Skills": cols[5]
+            };
+          });
+          // Remove header if present
+          const header = Object.values(jsonData[0] || {}).join('').toLowerCase();
+          if(header.includes('nome') || header.includes('data')) jsonData.shift();
+        } else {
+          throw new Error("Formato de arquivo não suportado. Use .csv, .txt ou .xlsx.");
+        }
+        
+        processImportedData(jsonData);
+
+      } catch (error) {
+        alert(`Erro ao processar o arquivo: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const processCSV = (text: string) => {
-    const lines = text.split(/\r\n|\n/);
+  const processImportedData = (data: any[]) => {
     const newEmployees: Employee[] = [];
-    let importedCount = 0;
-    let duplicateCount = 0;
-
+    let importedCount = 0, duplicateCount = 0, invalidDateCount = 0, missingFieldsCount = 0;
     const existingNames = new Set(employees.map(emp => emp.name.trim().toLowerCase()));
 
-    lines.forEach((line, index) => {
-      if (!line.trim()) return;
-      const cols = line.split(/[,;]/);
-      let empName = cols[0]?.trim();
-      let dateStr = cols[1]?.trim();
-      let empRole = cols[2]?.trim() || 'QA Junior'; // Assuming role can be in CSV
-      let empTeam = cols[3]?.trim() || 'Sem Time'; // Assuming team can be in CSV
-      let empEmail = cols[4]?.trim() || 'email@pendente.com'; // Assuming email can be in CSV
-      let empSkills = cols[5]?.trim() ? cols[5].split('|').map(s => s.trim()) : []; // Assuming skills are pipe-separated
+    data.forEach(row => {
+      const nameKey = Object.keys(row).find(k => k.toLowerCase().includes('nome')) || '';
+      const dateKey = Object.keys(row).find(k => k.toLowerCase().includes('data')) || '';
+      
+      const empName = row[nameKey]?.trim();
+      let dateValue = row[dateKey];
 
-      if (!empName || !dateStr) return;
-      if (index === 0 && (empName.toLowerCase().includes('nome') || empName.toLowerCase().includes('name'))) return;
-
-      const cleanName = empName.replace(/["']/g, "");
-      const normalizedName = cleanName.toLowerCase();
-
-      // Verificar duplicidade
-      if (existingNames.has(normalizedName)) {
-        duplicateCount++;
+      if (!empName || !dateValue) {
+        missingFieldsCount++;
         return;
       }
 
+      if (existingNames.has(empName.toLowerCase())) {
+        duplicateCount++;
+        return;
+      }
+      
       let formattedDate = '';
-      if (dateStr.includes('/')) {
-        const [day, month, year] = dateStr.split('/');
-        if (day && month && year && year.length === 4) {
-          formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      if (typeof dateValue === 'number') { // Excel date serial number
+        const excelEpoch = new Date(1899, 11, 30);
+        const date = new Date(excelEpoch.getTime() + dateValue * 86400000);
+        formattedDate = date.toISOString().split('T')[0];
+      } else if (typeof dateValue === 'string') {
+        const parts = dateValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (parts) {
+          formattedDate = `${parts[3]}-${parts[2]}-${parts[1]}`;
+        } else if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          formattedDate = dateValue;
         }
-      } else if (dateStr.includes('-')) {
-        formattedDate = dateStr;
       }
 
-      if (isNaN(Date.parse(formattedDate))) return;
+      if (!formattedDate || isNaN(Date.parse(formattedDate))) {
+        invalidDateCount++;
+        return;
+      }
 
-      existingNames.add(normalizedName);
+      const roleKey = Object.keys(row).find(k => k.toLowerCase().includes('cargo')) || '';
+      const teamKey = Object.keys(row).find(k => k.toLowerCase().includes('time')) || '';
+      const emailKey = Object.keys(row).find(k => k.toLowerCase().includes('email')) || '';
+      const skillsKey = Object.keys(row).find(k => k.toLowerCase().includes('skills')) || '';
 
+      existingNames.add(empName.toLowerCase());
       newEmployees.push({
-        id: `imp-${Date.now()}-${index}`,
-        name: cleanName,
-        role: empRole,
-        team: empTeam,
-        email: empEmail,
+        id: `imp-${Date.now()}-${importedCount}`,
+        name: empName,
+        role: row[roleKey]?.trim() || 'QA Junior',
+        team: row[teamKey]?.trim() || 'Sem Time',
+        email: row[emailKey]?.trim() || '',
         admissionDate: formattedDate,
-        skills: empSkills
+        skills: row[skillsKey] ? String(row[skillsKey]).split('|').map(s => s.trim()).filter(Boolean) : []
       });
       importedCount++;
     });
 
-    if (newEmployees.length > 0) {
+    let summary = [];
+    if (importedCount > 0) {
       setEmployees(prev => [...prev, ...newEmployees]);
-      
-      let msg = `${importedCount} colaboradores importados com sucesso!`;
-      if (duplicateCount > 0) {
-        msg += `\n\n${duplicateCount} já existiam e não foram duplicados.`;
-      }
-      alert(msg);
-    } else {
-      if (duplicateCount > 0) {
-        alert(`Nenhum novo dado. Todos os ${duplicateCount} nomes já existem.`);
-      } else {
-        alert("Erro ou nenhum dado válido encontrado.");
-      }
+      summary.push(`${importedCount} colaboradores importados com sucesso.`);
     }
+    if (duplicateCount > 0) summary.push(`${duplicateCount} nomes já existiam e foram ignorados.`);
+    if (invalidDateCount > 0) summary.push(`${invalidDateCount} linhas com formato de data inválido.`);
+    if (missingFieldsCount > 0) summary.push(`${missingFieldsCount} linhas sem campos obrigatórios.`);
+
+    alert(summary.length > 0 ? summary.join('\n\n') : "Nenhum dado novo para importar. Verifique o arquivo.");
   };
 
   return (
@@ -410,6 +431,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                       >
                         <Edit2 size={18} />
                       </button>
+                      <button 
+                        type="button"
+                        onClick={() => handleDelete(emp)} 
+                        className="text-slate-400 hover:text-red-600 transition-colors p-2 rounded-lg hover:bg-red-50 cursor-pointer"
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -474,9 +503,16 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                 <button 
                   type="button"
                   onClick={() => handleOpenModal(emp)} 
-                  className="w-full bg-blue-50 text-blue-700 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
+                  className="flex-1 bg-blue-50 text-blue-700 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
                 >
                   <Edit2 size={16} /> Editar
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleDelete(emp)} 
+                  className="flex-1 bg-red-50 text-red-700 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
+                >
+                  <Trash2 size={16} /> Excluir
                 </button>
               </div>
             </div>
@@ -558,11 +594,15 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                       value={skillInput}
                       onChange={e => setSkillInput(e.target.value)}
                       onKeyDown={handleAddSkill}
+                      list="skills-suggestions"
                     />
+                    <datalist id="skills-suggestions">
+                      {allSkills.map(skill => <option key={skill} value={skill} />)}
+                    </datalist>
                     <Tag size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
                   </div>
                   <button 
-                    onClick={() => handleAddSkill()}
+                    onClick={handleAddSkill}
                     className="px-4 bg-blue-100 text-blue-700 rounded-xl font-bold hover:bg-blue-200 transition-colors"
                   >
                     <Plus size={20} />
@@ -596,7 +636,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    handleDeleteCurrent();
+                    const employeeToDelete = employees.find(emp => emp.id === editingId);
+                    if (employeeToDelete) {
+                      handleDelete(employeeToDelete);
+                    }
                   }}
                   className="w-full sm:w-auto px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-800 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border border-red-100 cursor-pointer shadow-sm"
                 >
@@ -626,4 +669,5 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       )}
     </div>
   );
+
 };

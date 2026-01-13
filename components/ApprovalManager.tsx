@@ -1,6 +1,7 @@
 import React from 'react';
 import { Employee, VacationRequest } from '../types';
 import { Check, X } from 'lucide-react';
+import { STATUS_COLORS, STATUS_TRANSLATION } from '../constants';
 
 interface ApprovalManagerProps {
   employees: Employee[];
@@ -29,6 +30,18 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
     alert('Férias rejeitadas com sucesso!');
   };
 
+  const formatDate = (iso?: string) => {
+    if (!iso) return '';
+    const parts = iso.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day).toLocaleDateString('pt-BR');
+    }
+    return iso;
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl md:text-3xl font-bold text-blue-900">Aprovações de Férias</h2>
@@ -55,8 +68,8 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
               {pendingVacations.length > 0 ? (
                 pendingVacations.map(vac => {
                   const emp = employees.find(e => e.id === vac.employeeId);
-                  const displayStartDate = new Date(vac.startDate + 'T00:00:00').toLocaleDateString('pt-BR');
-                  const displayEndDate = new Date(vac.endDate + 'T00:00:00').toLocaleDateString('pt-BR');
+                  const displayStartDate = formatDate(vac.startDate);
+                  const displayEndDate = formatDate(vac.endDate);
                   // Calculate days if not stored, adding +1 to include both start and end dates
                   const vacationDays = vac.days || Math.round((new Date(vac.endDate).getTime() - new Date(vac.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1;
                   return (
@@ -70,12 +83,20 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
                       </td>
                       <td className="p-3 text-sm">{vacationDays}d</td>
                       <td className="p-3 text-sm">{vac.acquisitionYear || 'N/A'}</td>
-                      <td className="p-3 text-sm text-orange-600 font-medium"> {/* Display reason */}
-                        {vac.specialApprovalReason || 'N/A'}
+                      <td className="p-3 text-sm text-orange-600 font-medium">
+                        {vac.specialApprovalReason ? (
+                          <ul className="list-disc list-inside text-xs">
+                            {vac.specialApprovalReason.split('; ').map((reason, index) => (
+                              <li key={index}>{reason}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          'N/A'
+                        )}
                       </td>
                       <td className="p-3 text-sm">
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">
-                          Pendente
+                        <span className={`px-2 py-1 text-xs rounded-full font-medium border ${STATUS_COLORS[vac.status]}`}>
+                          {STATUS_TRANSLATION[vac.status]}
                         </span>
                       </td>
                       <td className="p-3 text-center flex gap-2 justify-center">

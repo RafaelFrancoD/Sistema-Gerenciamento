@@ -95,7 +95,7 @@ function App() {
       case 'vacations':
         return <VacationManager employees={employees} vacations={vacations} setVacations={setVacations} />;
       case 'reports':
-        return <Reports employees={employees} vacations={vacations} />;
+        return <Reports employees={employees} vacations={vacations} setVacations={setVacations} />;
       case 'approvals':
         return <ApprovalManager employees={employees} vacations={vacations} setVacations={setVacations} />;
       default:

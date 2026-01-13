@@ -185,44 +185,53 @@ function isQAConflict(
 //   Data Base para cálculo: 06/11/2025
 //   Data de Vencimento = 06/05/2026 (6 meses depois)
 export function calculateVacationDueDate(admissionDateStr: string, acquisitionYear: number): Date {
-  // Parse admission date robustly. Accepts either 'DD/MM/YYYY' or ISO-like 'YYYY-MM-DD' formats.
-  let admissionDate: Date;
-  const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/;
-  const match = admissionDateStr.match(ddmmyyyy);
-  if (match) {
-    const day = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1;
-    const year = parseInt(match[3], 10);
-    admissionDate = new Date(year, month, day);
+  // This function now robustly handles 'DD/MM/YYYY' and 'YYYY-MM-DD' formats.
+  let day: number, month: number;
+  
+  const ddmmyyyy = admissionDateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const yyyymmdd = admissionDateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (ddmmyyyy) {
+    day = parseInt(ddmmyyyy[1], 10);
+    month = parseInt(ddmmyyyy[2], 10) - 1; // JS month is 0-indexed
+  } else if (yyyymmdd) {
+    day = parseInt(yyyymmdd[3], 10);
+    month = parseInt(yyyymmdd[2], 10) - 1; // JS month is 0-indexed
   } else {
-    admissionDate = new Date(admissionDateStr);
+    // Fallback for other formats, though less reliable
+    const parsedDate = new Date(admissionDateStr);
+    if (isNaN(parsedDate.getTime())) {
+      throw new Error(`Invalid or unsupported admissionDate format: ${admissionDateStr}`);
+    }
+    // Adjust for potential timezone shifts when parsing
+    const adjustedDate = new Date(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), parsedDate.getUTCDate());
+    day = adjustedDate.getDate();
+    month = adjustedDate.getMonth();
   }
 
-  if (isNaN(admissionDate.getTime())) {
-    throw new Error(`Invalid admissionDate: ${admissionDateStr}`);
-  }
+  // Construct base date using acquisitionYear with the extracted day/month.
+  // Use UTC to prevent timezone-related day shifts.
+  const baseDate = new Date(Date.UTC(acquisitionYear, month, day));
 
-  // Extract day and month (local) from admission date
-  const day = admissionDate.getDate();
-  const month = admissionDate.getMonth(); // 0-indexed
-
-  // Construct base date using acquisitionYear with same day/month
-  const baseDate = new Date(acquisitionYear, month, day);
-
-  // Due date is 6 months after base date
+  // Due date is 6 months after base date. addMonths should handle month rollovers.
   const dueDate = addMonths(baseDate, 6);
-  // Normalize to start of day
-  dueDate.setHours(0, 0, 0, 0);
+  
   return dueDate;
 }
 
 export function getDaysUntilDue(dueDate: Date): number {
+  // Create a new Date object for today at midnight UTC to avoid timezone issues.
   const today = new Date();
-  today.setUTCHours(0, 0, 0, 0); // Compare UTC dates
-  dueDate.setUTCHours(0, 0, 0, 0);
+  const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  const diffTime = dueDate.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // The dueDate is already in UTC from calculateVacationDueDate.
+  // We don't need to modify it, just ensure we're comparing UTC dates.
+  const diffTime = dueDate.getTime() - todayUTC.getTime();
+  
+  // Use Math.floor to get the number of full days remaining.
+  // Example: If diffTime is 29.9 days, it's still 29 full days left.
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
   return diffDays;
 }
 
@@ -321,66 +330,61 @@ export function validateVacationRequest(
   request: VacationRequest,
   existingRequests: VacationRequest[],
   employees: Employee[]
-): { isValid: boolean; message: string } {
-  const startDate = new Date(request.startDate + 'T00:00:00'); // Ensure UTC for consistent day/month
-  const endDate = new Date(request.endDate + 'T00:00:00'); // Ensure UTC for consistent day/month
+): { isValid: boolean; messages: string[]; isSpecialApproval: boolean } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const startDate = new Date(request.startDate + 'T00:00:00');
+  const endDate = new Date(request.endDate + 'T00:00:00');
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
-  // Basic checks
+  // --- 1. Hard-blocking errors ---
   if (startDate <= today) {
-    return { isValid: false, message: 'A data de início deve ser no futuro.' };
+    errors.push('A data de início deve ser no futuro.');
   }
   if (startDate > endDate) {
-    return { isValid: false, message: 'A data de início não pode ser posterior à data de fim.' };
+    errors.push('A data de início não pode ser posterior à data de fim.');
   }
-
-  const duration = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
-
-  // RN02 – Períodos a considerar: 30 dias, 10+20 dias, 15+15 dias.
-  // Para períodos menores será necessário criar alerta e solicitar aprovação.
-  // Assuming for now that 10+20 and 15+15 refer to total 30 days,
-  // and smaller periods are handled by a special approval flow.
-  if (duration !== 30) {
-    // This message indicates it's not a standard 30-day period,
-    // which triggers the "alerta e solicitar aprovação" part of RN02.
-    return { isValid: false, message: `Período de ${duration} dias não é um período padrão (30 dias). Requer aprovação especial.` };
-  }
-
-  // RN03 – Férias não podem iniciar 2 dias antes de finais de semana e/ou feriados. (Include RN00)
   const startDateInvalidCheck = isStartDateInvalid(startDate);
   if (startDateInvalidCheck.invalid) {
-    return { isValid: false, message: startDateInvalidCheck.reason || 'Data de início inválida.' };
+    errors.push(startDateInvalidCheck.reason || 'Data de início inválida.');
+  }
+  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
+  if (conflictResult.conflict) {
+    errors.push(conflictResult.message);
+  }
+  const qaConflictResult = isQAConflict(startDate, endDate, request.employeeId, employees, existingRequests);
+  if (qaConflictResult.conflict) {
+    errors.push(qaConflictResult.message);
+  }
+  if (!request.acquisitionYear) {
+    errors.push('Ano de aquisição é obrigatório para validação do vencimento.');
   }
 
-  // RN01 - Check if the vacation period is within the 6-month post-due date window
+  // --- 2. Warnings (require special approval) ---
+  const duration = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
+  const standardPeriods = [10, 15, 20];
+  if (!standardPeriods.includes(duration)) {
+    warnings.push(`Período de ${duration} dias não é um período padrão.`);
+  }
   const employee = employees.find(emp => emp.id === request.employeeId);
   if (employee && request.acquisitionYear) {
     const dueDate = calculateVacationDueDate(employee.admissionDate, request.acquisitionYear);
-
-    // The legal deadline to grant the vacation is the dueDate itself (baseDate + 6 months).
-    // Any vacation ending after the dueDate is invalid.
     if (endDate > dueDate) {
-      return { isValid: false, message: `O período de férias excede o prazo máximo legal (${dueDate.toLocaleDateString('pt-BR')}).` };
+      warnings.push(`Período de férias excede o prazo máximo legal de ${dueDate.toLocaleDateString('pt-BR')}.`);
     }
-  } else if (!request.acquisitionYear) {
-    return { isValid: false, message: 'Ano de aquisição é obrigatório para validação do vencimento.' };
   }
 
-
-  // Check for general date range conflicts with other employees' vacations
-  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
-  if (conflictResult.conflict) {
-    return { isValid: false, message: conflictResult.message };
+  // --- 3. Final result ---
+  if (errors.length > 0) {
+    return { isValid: false, messages: errors, isSpecialApproval: false };
+  }
+  if (warnings.length > 0) {
+    return { isValid: true, messages: warnings, isSpecialApproval: true };
   }
 
-  // RN04 – Cada time tem 1 QA; não pode haver dois QAs indisponíveis ao mesmo tempo.
-  const qaConflictResult = isQAConflict(startDate, endDate, request.employeeId, employees, existingRequests);
-  if (qaConflictResult.conflict) {
-    return { isValid: false, message: qaConflictResult.message };
-  }
-
-  return { isValid: true, message: 'Período de férias válido.' };
+  return { isValid: true, messages: ['Período de férias válido.'], isSpecialApproval: false };
 }
 
 

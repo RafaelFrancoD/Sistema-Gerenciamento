@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { AlertTriangle, CheckCircle, Users, Clock, Zap, Send, X, Mail } from 'lucide-react';
 import { Employee, VacationRequest } from '../types';
-import { calculateVacationDueDate, getDaysUntilDue } from '../utils/dateLogic'; // Updated import
+import { calculateVacationDueDate, getDaysUntilDue } from '../utils/dateLogic';
 
 interface DashboardProps {
   employees: Employee[];
@@ -15,6 +15,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [selectedAlertIds, setSelectedAlertIds] = useState<string[]>([]);
+  const [chartTimeRange, setChartTimeRange] = useState('6m'); // State for chart filter
   
   // Calculate stats
   const totalEmployees = employees.length;
@@ -30,26 +31,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     const currentYear = new Date().getFullYear();
     const potentialAlerts = [];
 
-    // Check for current year and next year as potential acquisition years
-    // This is a pragmatic approach for dashboard alerts without full acquisition period management
     for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
       const acquisitionYear = currentYear + yearOffset;
       const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
       const daysLeft = getDaysUntilDue(dueDate);
 
-      // Only add if within the alert threshold and not already taken for this acquisition year
       const vacationTakenForAcquisitionYear = vacations.some(
         v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
       );
 
-      if (daysLeft < 30 && !vacationTakenForAcquisitionYear) { // RN07: 30 days threshold
+      if (daysLeft < 30 && !vacationTakenForAcquisitionYear) {
         potentialAlerts.push({ ...emp, daysLeft, acquisitionYear, dueDate });
       }
     }
     return potentialAlerts;
   })
-  .sort((a, b) => a.daysLeft - b.daysLeft) // Sort by days left
-  .filter((alert, index, self) => // Remove duplicates for the same employee, keep earliest due date
+  .sort((a, b) => a.daysLeft - b.daysLeft)
+  .filter((alert, index, self) =>
     index === self.findIndex((a) => (
       a.id === alert.id
     ))
@@ -58,13 +56,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   const pendingVacations = alerts.length;
 
   // --- DYNAMIC CHART DATA ---
-  const generateChartData = (vacationData: VacationRequest[]) => {
+  const generateChartData = (vacationData: VacationRequest[], timeRange: '6m' | '1y') => {
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const today = new Date();
     const data = [];
+    
+    const monthsToDisplay = timeRange === '1y' ? 12 : 6;
 
-    // 1. Initialize data for the last 6 months
-    for (let i = 5; i >= 0; i--) {
+    // 1. Initialize data for the last N months
+    for (let i = monthsToDisplay - 1; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const monthName = monthNames[d.getMonth()];
       const year = d.getFullYear().toString().slice(-2);
@@ -76,12 +76,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
       const start = new Date(vacation.startDate);
       const end = new Date(vacation.endDate);
 
-      // Iterate through each day of the vacation
-      for (let day = start; day <= end; day.setDate(day.getDate() + 1)) {
+      for (let day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
         const monthIndex = day.getMonth();
         const year = day.getFullYear();
 
-        // Find the corresponding month in our `data` array
         const targetMonth = data.find(d => {
           const [name, yr] = d.name.split('/');
           const dMonthIndex = monthNames.indexOf(name);
@@ -90,7 +88,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         });
 
         if (targetMonth) {
-          targetMonth.qtd += 1; // Increment the vacation day count for that month
+          targetMonth.qtd += 1;
         }
       }
     });
@@ -98,11 +96,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     return data;
   };
 
-  const chartData = generateChartData(vacations);
+  const chartData = generateChartData(vacations, chartTimeRange as '6m' | '1y');
 
   const handleOpenEmailModal = () => {
     if (alerts.length === 0) return;
-    // Pre-select all by default
     setSelectedAlertIds(alerts.map(a => a.id));
     setIsEmailModalOpen(true);
   };
@@ -119,7 +116,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     setIsEmailModalOpen(false);
     setNotificationStatus('sending');
     
-    // Simulate API call
     setTimeout(() => {
       setNotificationStatus('sent');
       setTimeout(() => setNotificationStatus('idle'), 3000);
@@ -176,9 +172,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         <div className="xl:col-span-8 bg-white p-4 md:p-8 rounded-3xl shadow-lg border border-slate-100 transition-all hover:shadow-xl">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg md:text-xl font-bold text-slate-800">Tendência de Férias</h3>
-            <select className="text-sm bg-slate-50 border-none rounded-lg px-3 py-1 text-slate-600 focus:ring-0 cursor-pointer hover:bg-slate-100">
-              <option>Últimos 6 meses</option>
-              <option>Este ano</option>
+            <select 
+              value={chartTimeRange}
+              onChange={(e) => setChartTimeRange(e.target.value)}
+              className="text-sm bg-slate-50 border-none rounded-lg px-3 py-1 text-slate-600 focus:ring-0 cursor-pointer hover:bg-slate-100"
+            >
+              <option value="6m">Últimos 6 meses</option>
+              <option value="1y">Este ano</option>
             </select>
           </div>
           <div className="h-64 md:h-80 w-full">
@@ -205,7 +205,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                   strokeWidth={4}
                   fillOpacity={1} 
                   fill="url(#colorQtd)" 
-                  animationDuration={2000}
+                  animationDuration={1000}
                 />
               </AreaChart>
             </ResponsiveContainer>
