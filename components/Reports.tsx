@@ -1,17 +1,8 @@
 import React, { useState } from 'react';
-import { Download, FileText, Mail, File as FileIcon, Search, FileSpreadsheet } from 'lucide-react';
+import { FileText, Mail, Search, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 import { Employee, VacationRequest } from '../types';
 import { STATUS_TRANSLATION } from '../constants';
-
-// Extend jsPDF type to include autoTable
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
-}
 
 interface ReportsProps {
   employees: Employee[];
@@ -77,7 +68,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
     ];
   };
 
-  const handleExport = (format: 'csv' | 'xlsx') => {
+  const handleExportIndividual = () => {
     const data = getReportData();
     if (!data) return;
 
@@ -85,7 +76,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Relatorio Ferias");
 
-    const fileName = `Relatorio_Ferias_${selectedEmployee?.name.replace(/\s+/g, '_')}.${format}`;
+    const fileName = `Relatorio_Ferias_${selectedEmployee?.name.replace(/\s+/g, '_')}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
 
@@ -125,46 +116,6 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
 
     const fileName = `Relatorio_Todas_Ferias_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
-  };
-
-  const handleExportAllPDF = () => {
-    const data = getAllVacationsData();
-    if (data.length === 0) {
-      alert('Nenhuma férias aprovada ou notificada para exportar.');
-      return;
-    }
-
-    const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation
-
-    doc.setFontSize(18);
-    doc.text('Relatório de Todas as Férias Agendadas', 14, 15);
-
-    doc.setFontSize(10);
-    doc.text(`Emitido em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
-
-    const tableData = data.map(row => [
-      row["Colaborador"],
-      row["Time"],
-      row["Data de Admissão"],
-      row["Ano Aquisição"],
-      row["Período"],
-      row["Início Férias"],
-      row["Fim Férias"],
-      row["Dias"],
-      row["Status"]
-    ]);
-
-    doc.autoTable({
-      startY: 28,
-      head: [['Colaborador', 'Time', 'Admissão', 'Ano Aquis.', 'Período', 'Início', 'Fim', 'Dias', 'Status']],
-      body: tableData,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [30, 58, 138] },
-      margin: { top: 28 }
-    });
-
-    const fileName = `Relatorio_Todas_Ferias_${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(fileName);
   };
 
   const handleSendEmail = () => {
@@ -231,20 +182,12 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
             <h3 className="text-lg font-bold text-blue-900 mb-1">Exportar Todas as Férias</h3>
             <p className="text-sm text-slate-600">Gere um relatório completo com todas as férias aprovadas e notificadas.</p>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleExportAllPDF}
-              className="px-4 py-2.5 border rounded-lg font-medium flex items-center gap-2 border-red-600 text-red-700 bg-white hover:bg-red-50 shadow-sm"
-            >
-              <FileIcon size={18} /> Exportar PDF
-            </button>
-            <button
-              onClick={handleExportAllExcel}
-              className="px-4 py-2.5 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 bg-white hover:bg-green-50 shadow-sm"
-            >
-              <FileSpreadsheet size={18} /> Exportar Excel
-            </button>
-          </div>
+          <button
+            onClick={handleExportAllExcel}
+            className="px-4 py-2.5 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 bg-white hover:bg-green-50 shadow-sm"
+          >
+            <FileSpreadsheet size={18} /> Exportar Excel
+          </button>
         </div>
       </div>
 
@@ -356,8 +299,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
               </div>
 
               <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap justify-end gap-3 print:hidden">
-                <button onClick={() => handleExport('csv')} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-slate-300 text-slate-600 hover:bg-slate-100"><FileIcon size={18} /> Exportar CSV</button>
-                <button onClick={() => handleExport('xlsx')} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download size={18} /> Exportar Excel</button>
+                <button onClick={handleExportIndividual} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 hover:bg-green-50"><FileSpreadsheet size={18} /> Exportar Excel</button>
                 <button onClick={handleSendEmail} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-blue-600 text-blue-600 hover:bg-blue-50"><Mail size={18} /> Enviar por Email</button>
               </div>
             </div>

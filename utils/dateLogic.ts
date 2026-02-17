@@ -363,15 +363,17 @@ export function validateVacationRequest(
   if (startDate > endDate) {
     errors.push('A data de início não pode ser posterior à data de fim.');
   }
-  const startDateInvalidCheck = isStartDateInvalid(startDate);
-  if (startDateInvalidCheck.invalid) {
-    errors.push(startDateInvalidCheck.reason || 'Data de início inválida.');
-  }
   if (!request.acquisitionYear) {
     errors.push('Ano de aquisição é obrigatório para validação do vencimento.');
   }
 
   // --- 2. Warnings (require special approval) ---
+  // Moved start date validation to warnings - only signal but allow request
+  const startDateInvalidCheck = isStartDateInvalid(startDate);
+  if (startDateInvalidCheck.invalid) {
+    warnings.push(startDateInvalidCheck.reason || 'Data de início inválida.');
+  }
+
   // Changed conflicts to warnings to allow requests with conflicts (with special approval)
   const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
   if (conflictResult.conflict) {
