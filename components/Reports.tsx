@@ -12,9 +12,27 @@ interface ReportsProps {
 
 export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacations }) => {
   const [selectedVacationId, setSelectedVacationId] = useState('');
-  
+
   const selectedVacation = vacations.find(v => v.id === selectedVacationId);
   const selectedEmployee = selectedVacation ? employees.find(e => e.id === selectedVacation.employeeId) : null;
+
+  // Helper function to determine the period number (1st, 2nd, 3rd) for a vacation request
+  const getVacationPeriodNumber = (vacation: VacationRequest): number => {
+    if (!vacation.acquisitionYear) return 0;
+
+    // Get all vacations for the same employee and acquisition year, sorted by start date
+    const employeeVacations = vacations
+      .filter(v =>
+        v.employeeId === vacation.employeeId &&
+        v.acquisitionYear === vacation.acquisitionYear &&
+        (v.status === 'approved' || v.status === 'notified' || v.status === 'planned' || v.status === 'pending')
+      )
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+    // Find the index of the current vacation and return period number (1-indexed)
+    const index = employeeVacations.findIndex(v => v.id === vacation.id);
+    return index >= 0 ? index + 1 : 0;
+  };
 
   const formatDate = (iso?: string) => {
     if (!iso) return '';
@@ -104,17 +122,29 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
             {approvedOrNotifiedVacations.length > 0 ? approvedOrNotifiedVacations.map(vac => {
               const emp = employees.find(e => e.id === vac.employeeId);
               const isActive = selectedVacationId === vac.id;
+              const periodNumber = getVacationPeriodNumber(vac);
               return (
-                <div 
+                <div
                   key={vac.id}
                   onClick={() => setSelectedVacationId(vac.id)}
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                    isActive 
-                      ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' 
+                    isActive
+                      ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500'
                       : 'bg-white border-slate-200 hover:border-blue-300'
                   }`}
                 >
-                  <p className="font-bold text-slate-800">{emp?.name}</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="font-bold text-slate-800">{emp?.name}</p>
+                    {periodNumber > 0 && (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        periodNumber === 1 ? 'bg-blue-100 text-blue-700' :
+                        periodNumber === 2 ? 'bg-green-100 text-green-700' :
+                        'bg-purple-100 text-purple-700'
+                      }`}>
+                        {periodNumber}°
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500">
                     {formatDate(vac.startDate)} a {formatDate(vac.endDate)}
                   </p>
@@ -153,6 +183,9 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
                     <div><p className="text-xs text-slate-500 uppercase">Dias</p><p className="font-bold text-xl">{selectedVacation.days} dias</p></div>
                     <div><p className="text-xs text-slate-500 uppercase">Ano Aquisição</p><p className="font-bold text-xl">{selectedVacation.acquisitionYear || 'N/A'}</p></div>
                     <div><p className="text-xs text-slate-500 uppercase">Status</p><p className="font-bold text-xl">{STATUS_TRANSLATION[selectedVacation.status] || selectedVacation.status}</p></div>
+                    {getVacationPeriodNumber(selectedVacation) > 0 && (
+                      <div><p className="text-xs text-slate-500 uppercase">Período</p><p className="font-bold text-xl">{getVacationPeriodNumber(selectedVacation)}° Período</p></div>
+                    )}
                   </div>
                 </div>
 
