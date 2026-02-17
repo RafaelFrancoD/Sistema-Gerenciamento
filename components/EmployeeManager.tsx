@@ -443,7 +443,6 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
           </p>
         )}
       </div>
-      </div>
 
       {/* --- DESKTOP VIEW: TABLE --- */}
       <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-blue-100 overflow-hidden">
