@@ -19,23 +19,37 @@ const getHolidaysForYear = (year: number): { month: number; day: number; name: s
     { month: 10, day: 2, name: 'Finados' },
     { month: 10, day: 15, name: 'Proclamação da República' },
     { month: 11, day: 25, name: 'Natal' },
-    
-    // Placeholder for Movable National Holidays (e.g., Carnaval, Sexta-feira Santa, Corpus Christi)
-    // In a real system, these would be calculated dynamically or fetched.
-    // Example for 2025 (Carnaval: Mar 3-4, Sexta-feira Santa: Apr 18, Corpus Christi: Jun 19)
-    { month: 2, day: 3, name: 'Carnaval' },
-    { month: 2, day: 4, name: 'Carnaval' },
-    { month: 3, day: 18, name: 'Sexta-feira Santa' },
-    { month: 5, day: 19, name: 'Corpus Christi' },
 
     // Placeholder for Municipal Holidays in São José do Rio Preto (RN00)
-    // Example: Aniversário da Cidade (March 19), Padroeiro (March 19)
     { month: 2, day: 19, name: 'Aniversário de São José do Rio Preto' },
-    // Add other municipal holidays as needed
   ];
 
-  // Filter out holidays that are not for the current year if they have a specific year defined
-  // (This logic is simplified as we're not dynamically calculating movable holidays here)
+  // Movable National Holidays by year
+  // In a real system, these would be calculated dynamically or fetched from an API
+  if (year === 2025) {
+    holidays.push(
+      { month: 2, day: 3, name: 'Carnaval' },
+      { month: 2, day: 4, name: 'Carnaval' },
+      { month: 3, day: 18, name: 'Sexta-feira Santa' },
+      { month: 5, day: 19, name: 'Corpus Christi' }
+    );
+  } else if (year === 2026) {
+    holidays.push(
+      { month: 1, day: 16, name: 'Carnaval' }, // February 16
+      { month: 1, day: 17, name: 'Carnaval' }, // February 17
+      { month: 3, day: 3, name: 'Sexta-feira Santa' }, // April 3
+      { month: 5, day: 4, name: 'Corpus Christi' } // June 4
+    );
+  } else if (year === 2027) {
+    holidays.push(
+      { month: 1, day: 8, name: 'Carnaval' }, // February 8
+      { month: 1, day: 9, name: 'Carnaval' }, // February 9
+      { month: 2, day: 26, name: 'Sexta-feira Santa' }, // March 26
+      { month: 4, day: 27, name: 'Corpus Christi' } // May 27
+    );
+  }
+  // Add more years as needed
+
   return holidays;
 };
 
@@ -350,19 +364,20 @@ export function validateVacationRequest(
   if (startDateInvalidCheck.invalid) {
     errors.push(startDateInvalidCheck.reason || 'Data de início inválida.');
   }
-  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
-  if (conflictResult.conflict) {
-    errors.push(conflictResult.message);
-  }
-  const qaConflictResult = isQAConflict(startDate, endDate, request.employeeId, employees, existingRequests);
-  if (qaConflictResult.conflict) {
-    errors.push(qaConflictResult.message);
-  }
   if (!request.acquisitionYear) {
     errors.push('Ano de aquisição é obrigatório para validação do vencimento.');
   }
 
   // --- 2. Warnings (require special approval) ---
+  // Changed conflicts to warnings to allow requests with conflicts (with special approval)
+  const conflictResult = isDateRangeConflict(startDate, endDate, existingRequests, employees, String(request.id));
+  if (conflictResult.conflict) {
+    warnings.push(conflictResult.message);
+  }
+  const qaConflictResult = isQAConflict(startDate, endDate, request.employeeId, employees, existingRequests);
+  if (qaConflictResult.conflict) {
+    warnings.push(qaConflictResult.message);
+  }
   const duration = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
   const standardPeriods = [10, 15, 20];
   if (!standardPeriods.includes(duration)) {
