@@ -158,6 +158,13 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
   
   const getEmployeeName = (id: string) => employees.find(e => e.id === id)?.name || 'Desconhecido';
 
+  // Sort vacations by employee name alphabetically
+  const sortedVacations = [...vacations].sort((a, b) => {
+    const nameA = getEmployeeName(a.employeeId).toLowerCase();
+    const nameB = getEmployeeName(b.employeeId).toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
   return (
     <div className="space-y-6">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
@@ -207,7 +214,7 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
           <table className="w-full text-left">
             <thead className="bg-slate-50/50 text-slate-600 text-xs uppercase"><tr><th className="p-4 font-semibold">Colaborador</th><th className="p-4 font-semibold">Período</th><th className="p-4 font-semibold text-center">Status</th><th className="p-4 font-semibold text-center">Ações</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {vacations.length === 0 ? (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma solicitação encontrada.</td></tr>) : (vacations.map((req) => (<tr key={req.id} className="hover:bg-slate-50/50"><td className="p-4 font-medium text-slate-800">{getEmployeeName(req.employeeId)}</td><td className="p-4 text-slate-600">{formatDate(req.startDate)} - {formatDate(req.endDate)}</td><td className="p-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[req.status]}`}>{STATUS_TRANSLATION[req.status]}</span></td><td className="p-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleEditVacation(req.id)} title="Editar" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><Edit2 size={16} /></button><button onClick={() => handleDeleteVacation(req.id)} title="Excluir" className="p-2 rounded-lg hover:bg-red-50 text-red-600"><Trash2 size={16} /></button></div></td></tr>)))}
+              {sortedVacations.length === 0 ? (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma solicitação encontrada.</td></tr>) : (sortedVacations.map((req) => (<tr key={req.id} className="hover:bg-slate-50/50"><td className="p-4 font-medium text-slate-800">{getEmployeeName(req.employeeId)}</td><td className="p-4 text-slate-600">{formatDate(req.startDate)} - {formatDate(req.endDate)}</td><td className="p-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[req.status]}`}>{STATUS_TRANSLATION[req.status]}</span></td><td className="p-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleEditVacation(req.id)} title="Editar" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><Edit2 size={16} /></button><button onClick={() => handleDeleteVacation(req.id)} title="Excluir" className="p-2 rounded-lg hover:bg-red-50 text-red-600"><Trash2 size={16} /></button></div></td></tr>)))}
             </tbody>
           </table>
         </div>
