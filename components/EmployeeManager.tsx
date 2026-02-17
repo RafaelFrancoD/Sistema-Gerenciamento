@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, Save, Calendar, Mail, Briefcase, Tag, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Calendar, Mail, Briefcase, Tag, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Search, Trash } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Employee, VacationRequest } from '../types';
 import { TEAMS } from '../constants';
@@ -29,8 +29,11 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
   const [editingId, setEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sort State
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
+  // Sort State - Default sort by name alphabetically
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
+
+  // Search State
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Form State
   const [name, setName] = useState('');
@@ -50,9 +53,23 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
     setAllSkills(Array.from(skills).sort());
   }, [employees]);
 
-  // --- SORTING LOGIC ---
+  // --- SORTING AND FILTERING LOGIC ---
   const sortedEmployees = useMemo(() => {
     let sortableItems = [...employees];
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase().trim();
+      sortableItems = sortableItems.filter(emp =>
+        emp.name.toLowerCase().includes(search) ||
+        emp.email.toLowerCase().includes(search) ||
+        emp.team.toLowerCase().includes(search) ||
+        emp.role.toLowerCase().includes(search) ||
+        emp.skills.some(skill => skill.toLowerCase().includes(search))
+      );
+    }
+
+    // Apply sorting
     if (sortConfig !== null) {
       sortableItems.sort((a, b) => {
         let aValue: any;
@@ -64,7 +81,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
         } else {
           aValue = a[sortConfig.key as keyof Employee];
           bValue = b[sortConfig.key as keyof Employee];
-          
+
           if (typeof aValue === 'string') aValue = aValue.toLowerCase();
           if (typeof bValue === 'string') bValue = bValue.toLowerCase();
         }
@@ -79,7 +96,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       });
     }
     return sortableItems;
-  }, [employees, sortConfig]);
+  }, [employees, sortConfig, searchTerm]);
 
   const requestSort = (key: SortKey) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -169,6 +186,42 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       setEmployees(prev => [...prev, newEmployee]);
     }
     setIsModalOpen(false);
+  };
+
+  // Delete all employees
+  const handleDeleteAll = () => {
+    if (employees.length === 0) {
+      alert('Não há colaboradores para excluir.');
+      return;
+    }
+
+    const employeesWithFutureVacations = employees.filter(emp =>
+      vacations.some(vac =>
+        vac.employeeId === emp.id &&
+        new Date(vac.startDate) > new Date() &&
+        (vac.status === 'planned' || vac.status === 'approved')
+      )
+    );
+
+    if (employeesWithFutureVacations.length > 0) {
+      alert(`Não é possível excluir todos os colaboradores. ${employeesWithFutureVacations.length} colaborador(es) possuem férias futuras planejadas ou aprovadas: ${employeesWithFutureVacations.map(e => e.name).join(', ')}`);
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `ATENÇÃO: Você tem certeza que deseja excluir TODOS os ${employees.length} colaboradores do sistema?\n\nEsta ação é IRREVERSÍVEL e não pode ser desfeita!`
+    );
+
+    if (confirmDelete) {
+      const doubleConfirm = window.confirm(
+        'Esta é sua última confirmação. Deseja realmente excluir todos os colaboradores?'
+      );
+      if (doubleConfirm) {
+        setEmployees([]);
+        alert('Todos os colaboradores foram excluídos com sucesso.');
+        setIsModalOpen(false);
+      }
+    }
   };
 
   // RF03 – Exclusão de colaborador (bloquear se tiver férias futuras).
@@ -320,7 +373,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
         team: row[teamKey]?.trim() || 'Sem Time',
         email: row[emailKey]?.trim() || '',
         admissionDate: formattedDate,
-        skills: row[skillsKey] ? String(row[skillsKey]).split('|').map(s => s.trim()).filter(Boolean) : []
+        skills: row[skillsKey] ? String(row[skillsKey]).split(/[;|]/).map(s => s.trim()).filter(Boolean) : []
       });
       importedCount++;
     });
@@ -347,16 +400,49 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
         
         <div className="flex flex-wrap gap-3 w-full md:w-auto">
           <input type="file" ref={fileInputRef} onChange={processFile} accept=".csv,.txt,.xlsx" className="hidden" />
-          
+
           <button onClick={handleImportClick} className="flex-1 md:flex-none bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-sm transition-all">
             <FileSpreadsheet size={20} /> <span className="hidden sm:inline">Importar Planilha</span>
             <span className="sm:hidden">Importar</span>
+          </button>
+
+          <button onClick={handleDeleteAll} className="flex-1 md:flex-none bg-white border border-red-200 text-red-700 hover:bg-red-50 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-sm transition-all">
+            <Trash size={20} /> <span className="hidden sm:inline">Excluir Todos</span>
+            <span className="sm:hidden">Excluir</span>
           </button>
 
           <button onClick={() => handleOpenModal()} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all hover:scale-105">
             <Plus size={20} /> <span className="font-bold">Novo Colaborador</span>
           </button>
         </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-blue-100 p-4">
+        <div className="relative">
+          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Pesquisar por nome, email, time, cargo ou skills..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50 outline-none transition-all"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          )}
+        </div>
+        {searchTerm && (
+          <p className="mt-2 text-sm text-slate-500">
+            Encontrados: <span className="font-bold text-blue-600">{sortedEmployees.length}</span> colaborador(es)
+          </p>
+        )}
+      </div>
       </div>
 
       {/* --- DESKTOP VIEW: TABLE --- */}
