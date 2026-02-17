@@ -668,8 +668,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
               </div>
 
               <div className="pt-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1 mb-3 block">Skills & Competências (Digite e pressione Enter)</label>
-                
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1 mb-3 block">Skills & Competências</label>
+
                 <div className="flex gap-2 mb-3">
                   <div className="relative flex-1">
                     <input
@@ -686,8 +686,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                     </datalist>
                     <Tag size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
                   </div>
-                  <button 
+                  <button
                     onClick={handleAddSkill}
+                    title="Adicionar"
                     className="px-4 bg-blue-100 text-blue-700 rounded-xl font-bold hover:bg-blue-200 transition-colors"
                   >
                     <Plus size={20} />

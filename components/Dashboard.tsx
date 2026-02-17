@@ -51,13 +51,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     return result;
   });
 
-  // Férias tiradas no ano corrente
+  // Férias gozadas no ano corrente (apenas com endDate já passado)
   const currentYear = new Date().getFullYear();
+  const now = new Date();
   const takenVacationsData = employees.map(emp => {
     const empVacations = vacations.filter(v =>
       v.employeeId === emp.id &&
       v.status === 'approved' &&
-      v.acquisitionYear === currentYear
+      v.acquisitionYear === currentYear &&
+      new Date(v.endDate) < now
     );
     return {
       employee: emp,
@@ -302,7 +304,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
           </div>
         </div>
 
-        {/* Férias Tiradas no Ano - Clicável */}
+        {/* Férias Gozadas no Ano - Clicável */}
         <div
           onClick={() => setTakenVacationsModalOpen(true)}
           className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-purple-200 cursor-pointer"
@@ -313,7 +315,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
               <Zap size={26} />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Férias Tiradas {currentYear}</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Férias Gozadas em {currentYear}</p>
               <p className="text-3xl font-bold text-slate-800">{totalVacationsTaken}</p>
             </div>
           </div>
@@ -419,10 +421,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                   onChange={(e) => setRiskDaysFilter(parseInt(e.target.value))}
                   className="text-xs bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-2 py-1 text-white focus:ring-0 cursor-pointer hover:bg-white/20"
                 >
+                  <option value={7} className="bg-slate-800">7 dias</option>
                   <option value={15} className="bg-slate-800">15 dias</option>
                   <option value={30} className="bg-slate-800">30 dias</option>
+                  <option value={45} className="bg-slate-800">45 dias</option>
                   <option value={60} className="bg-slate-800">60 dias</option>
-                  <option value={90} className="bg-slate-800">90 dias</option>
                 </select>
               </div>
 
@@ -712,10 +715,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                 onChange={(e) => setExpiringDaysFilter(parseInt(e.target.value))}
                 className="text-sm bg-white border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 cursor-pointer"
               >
+                <option value={7}>7 dias</option>
                 <option value={15}>15 dias</option>
                 <option value={30}>30 dias</option>
+                <option value={45}>45 dias</option>
                 <option value={60}>60 dias</option>
-                <option value={90}>90 dias</option>
               </select>
             </div>
 
@@ -771,7 +775,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         </div>
       )}
 
-      {/* Modal Férias Tiradas no Ano */}
+      {/* Modal Férias Gozadas no Ano */}
       {takenVacationsModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -781,8 +785,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                   <Zap size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-purple-900">Férias Tiradas em {currentYear}</h3>
-                  <p className="text-xs text-slate-500">Colaboradores que já tiraram férias este ano</p>
+                  <h3 className="text-lg font-bold text-purple-900">Férias Gozadas em {currentYear}</h3>
+                  <p className="text-xs text-slate-500">Colaboradores que já concluíram férias este ano</p>
                 </div>
               </div>
               <button onClick={() => setTakenVacationsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -792,7 +796,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
             <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
               {takenVacationsData.length === 0 ? (
-                <p className="text-center text-slate-400 py-8">Nenhum colaborador tirou férias em {currentYear} ainda.</p>
+                <p className="text-center text-slate-400 py-8">Nenhum colaborador gozou férias em {currentYear} ainda.</p>
               ) : (
                 <div className="space-y-3">
                   {takenVacationsData.map(data => {

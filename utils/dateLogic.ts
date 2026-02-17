@@ -354,8 +354,11 @@ export function validateVacationRequest(
   today.setUTCHours(0, 0, 0, 0);
 
   // --- 1. Hard-blocking errors ---
-  if (startDate <= today) {
-    errors.push('A data de início deve ser no futuro.');
+  // Permitir períodos retroativos até 6 meses antes
+  const sixMonthsAgo = new Date(today);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  if (startDate < sixMonthsAgo) {
+    errors.push('A data de início não pode ser anterior a 6 meses atrás.');
   }
   if (startDate > endDate) {
     errors.push('A data de início não pode ser posterior à data de fim.');
