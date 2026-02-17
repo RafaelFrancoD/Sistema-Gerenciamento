@@ -12,14 +12,11 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) => {
-  const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-  const [selectedAlertIds, setSelectedAlertIds] = useState<string[]>([]);
   const [chartTimeRange, setChartTimeRange] = useState('6m'); // State for chart filter
   const [activeVacationsModalOpen, setActiveVacationsModalOpen] = useState(false);
   const [expiringVacationsModalOpen, setExpiringVacationsModalOpen] = useState(false);
   const [takenVacationsModalOpen, setTakenVacationsModalOpen] = useState(false);
-  const [riskDaysFilter, setRiskDaysFilter] = useState(30);
+  const [riskDaysFilter, setRiskDaysFilter] = useState(90);
   const [expiringDaysFilter, setExpiringDaysFilter] = useState(30);
   
   // Calculate stats
@@ -68,7 +65,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
   const totalVacationsTaken = takenVacationsData.reduce((sum, data) => sum + data.count, 0);
 
-  // RN07 – Alerta de vencimento baseado no filtro de dias.
+  // Risco de vencimento - colaboradores com férias não solicitadas a partir de 90 dias
   const alerts = employees.flatMap(emp => {
     const currentYear = new Date().getFullYear();
     const potentialAlerts = [];
@@ -78,11 +75,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
       const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
       const daysLeft = getDaysUntilDue(dueDate);
 
-      const vacationTakenForAcquisitionYear = vacations.some(
-        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
+      // Verificar se há QUALQUER solicitação (não apenas aprovada) para esse ano de aquisição
+      const hasAnyVacationRequest = vacations.some(
+        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear
       );
 
-      if (daysLeft <= riskDaysFilter && daysLeft >= 0 && !vacationTakenForAcquisitionYear) {
+      // Alerta se não há solicitação E está dentro de 90 dias do vencimento
+      if (!hasAnyVacationRequest && daysLeft <= 90 && daysLeft >= 0) {
         potentialAlerts.push({ ...emp, daysLeft, acquisitionYear, dueDate });
       }
     }
@@ -210,29 +209,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
   const chartData = generateChartData(vacations, chartTimeRange as '6m' | '1y');
 
-  const handleOpenEmailModal = () => {
-    if (alerts.length === 0) return;
-    setSelectedAlertIds(alerts.map(a => a.id));
-    setIsEmailModalOpen(true);
-  };
-
-  const toggleAlertSelection = (id: string) => {
-    setSelectedAlertIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
-  const handleConfirmSend = () => {
-    if (selectedAlertIds.length === 0) return;
-    
-    setIsEmailModalOpen(false);
-    setNotificationStatus('sending');
-    
-    setTimeout(() => {
-      setNotificationStatus('sent');
-      setTimeout(() => setNotificationStatus('idle'), 3000);
-    }, 1500);
-  };
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -368,25 +344,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
         {/* Alerts Section */}
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <div
-            onClick={handleOpenEmailModal}
-            className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform"
-          >
-            <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500 rounded-full filter blur-[60px] opacity-20 animate-pulse"></div>
-
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-2 relative z-10">
-              <Zap size={20} className="text-yellow-400" />
-              Automação de Avisos
-            </h3>
-            <p className="text-slate-400 text-sm mb-4 relative z-10">
-              Colaboradores sem notificação
-            </p>
-
-            <div className="text-4xl font-bold relative z-10">
-              {alerts.length}
-            </div>
-          </div>
-
           <div className="flex-1 bg-gradient-to-br from-red-900 via-red-800 to-rose-900 rounded-3xl shadow-2xl overflow-hidden border border-red-700/50 relative group min-h-[300px]">
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500 rounded-full filter blur-[50px] opacity-30 group-hover:opacity-50 transition-opacity duration-700"></div>
             <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black/60 to-transparent"></div>
@@ -406,11 +363,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                   onChange={(e) => setRiskDaysFilter(parseInt(e.target.value))}
                   className="text-xs bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-2 py-1 text-white focus:ring-0 cursor-pointer hover:bg-white/20"
                 >
-                  <option value={7} className="bg-slate-800">7 dias</option>
-                  <option value={15} className="bg-slate-800">15 dias</option>
                   <option value={30} className="bg-slate-800">30 dias</option>
-                  <option value={45} className="bg-slate-800">45 dias</option>
                   <option value={60} className="bg-slate-800">60 dias</option>
+                  <option value={90} className="bg-slate-800">90 dias</option>
                 </select>
               </div>
 
@@ -516,91 +471,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                   </div>
                 );
               })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Email Selection Modal */}
-      {isEmailModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-blue-50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-blue-100 rounded-full text-blue-600">
-                  <Mail size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-blue-900">Selecionar Destinatários</h3>
-                  <p className="text-xs text-slate-500">Escolha quem receberá o aviso de vencimento</p>
-                </div>
-              </div>
-              <button onClick={() => setIsEmailModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
-              <div className="flex justify-between items-center mb-3 px-2">
-                <span className="text-xs font-bold uppercase text-slate-500">Colaboradores em Risco ({alerts.length})</span>
-                <button
-                  onClick={() => setSelectedAlertIds(selectedAlertIds.length === alerts.length ? [] : alerts.map(a => a.id))}
-                  className="text-xs font-bold text-blue-600 hover:underline"
-                >
-                  {selectedAlertIds.length === alerts.length ? 'Desmarcar Todos' : 'Marcar Todos'}
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {alerts.map(alert => {
-                  const isSelected = selectedAlertIds.includes(alert.id);
-                  return (
-                    <div
-                      key={alert.id}
-                      onClick={() => toggleAlertSelection(alert.id)}
-                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                        isSelected
-                          ? 'bg-white border-blue-500 shadow-sm'
-                          : 'bg-white border-slate-200 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-slate-100 border-slate-300'
-                      }`}>
-                        {isSelected && <CheckCircle size={14} />}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between">
-                          <p className={`font-bold text-sm ${isSelected ? 'text-slate-800' : 'text-slate-500'}`}>{alert.name}</p>
-                          <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">{alert.daysLeft} dias</span>
-                        </div>
-                        <p className="text-xs text-slate-400">{alert.email}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              <button
-                onClick={() => setIsEmailModalOpen(false)}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmSend}
-                disabled={selectedAlertIds.length === 0}
-                className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all ${
-                  selectedAlertIds.length > 0
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-900/20 hover:-translate-y-0.5'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <Send size={16} />
-                Enviar ({selectedAlertIds.length})
-              </button>
             </div>
           </div>
         </div>
