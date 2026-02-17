@@ -33,23 +33,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   });
   const activeVacations = activeVacationsData.length;
 
-  // Férias a vencer baseado no filtro
-  const expiringVacationsData = employees.flatMap(emp => {
-    const currentYear = new Date().getFullYear();
-    const result = [];
-    for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
-      const acquisitionYear = currentYear + yearOffset;
-      const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
-      const daysLeft = getDaysUntilDue(dueDate);
-      const vacationTaken = vacations.some(
-        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
-      );
-      if (daysLeft <= expiringDaysFilter && daysLeft >= 0 && !vacationTaken) {
-        result.push({ ...emp, daysLeft, acquisitionYear, dueDate });
+  // Férias a vencer baseado em férias aprovadas (status approved) - mínimo 7 dias
+  const expiringVacationsData = vacations
+    .filter(v => v.status === 'approved')
+    .map(v => {
+      const endDate = new Date(v.endDate);
+      const now = new Date();
+      const daysLeft = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const emp = employees.find(e => e.id === v.employeeId);
+      if (!emp) return null;
+      if (daysLeft >= 7 && daysLeft <= expiringDaysFilter) {
+        return { ...emp, daysLeft, vacation: v, endDate: v.endDate };
       }
-    }
-    return result;
-  });
+      return null;
+    })
+    .filter(Boolean) as Array<Employee & { daysLeft: number; vacation: VacationRequest; endDate: string }>;
 
   // Férias gozadas no ano corrente (apenas com endDate já passado)
   const currentYear = new Date().getFullYear();
@@ -298,7 +296,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
               <Clock size={26} />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">A vencer ({expiringDaysFilter} dias)</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Férias a vencer</p>
               <p className="text-3xl font-bold text-slate-800">{pendingVacations}</p>
             </div>
           </div>
@@ -370,36 +368,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
         {/* Alerts Section */}
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden">
+          <div
+            onClick={handleOpenEmailModal}
+            className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform"
+          >
             <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500 rounded-full filter blur-[60px] opacity-20 animate-pulse"></div>
-            
+
             <h3 className="text-lg font-bold mb-2 flex items-center gap-2 relative z-10">
               <Zap size={20} className="text-yellow-400" />
               Automação de Avisos
             </h3>
-            <p className="text-slate-400 text-sm mb-6 relative z-10">
-              {alerts.length} colaboradores precisam ser notificados.
+            <p className="text-slate-400 text-sm mb-4 relative z-10">
+              Colaboradores sem notificação
             </p>
 
-            <button 
-              onClick={handleOpenEmailModal}
-              disabled={alerts.length === 0 || notificationStatus !== 'idle'}
-              className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all relative z-10 ${
-                notificationStatus === 'sent' 
-                  ? 'bg-green-500 text-white' 
-                  : notificationStatus === 'sending'
-                    ? 'bg-blue-600 text-white cursor-wait'
-                    : alerts.length > 0 
-                      ? 'bg-blue-600 hover:bg-blue-500 text-white hover:scale-105 shadow-lg shadow-blue-900/50' 
-                      : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              }`}
-            >
-              {notificationStatus === 'idle' && (
-                <> <Send size={18} /> Disparar Emails Agora </>
-              )}
-              {notificationStatus === 'sending' && "Enviando..."}
-              {notificationStatus === 'sent' && "Enviado com Sucesso!"}
-            </button>
+            <div className="text-4xl font-bold relative z-10">
+              {alerts.length}
+            </div>
           </div>
 
           <div className="flex-1 bg-gradient-to-br from-red-900 via-red-800 to-rose-900 rounded-3xl shadow-2xl overflow-hidden border border-red-700/50 relative group min-h-[300px]">
@@ -725,7 +710,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
             <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
               {expiringVacationsData.length === 0 ? (
-                <p className="text-center text-slate-400 py-8">Nenhum colaborador com férias próximas do vencimento.</p>
+                <p className="text-center text-slate-400 py-8">Nenhuma féria aprovada próxima do término.</p>
               ) : (
                 <div className="space-y-3">
                   {expiringVacationsData.map(data => {
@@ -740,11 +725,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                       return iso;
                     };
                     return (
-                      <div key={`${data.id}-${data.acquisitionYear}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                      <div key={`${data.id}-${data.vacation.id}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-bold text-slate-800">{data.name}</p>
-                            <p className="text-xs text-slate-500">{data.team} • {data.role}</p>
+                            <p className="text-xs text-slate-500">{data.team}</p>
                           </div>
                           <span className={`px-2 py-1 text-xs font-bold rounded-full ${
                             data.daysLeft < 15 ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'
@@ -753,8 +738,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                           </span>
                         </div>
                         <div className="mt-3 text-sm text-slate-600">
-                          <p><strong>Vencimento:</strong> {formatDate(data.dueDate)}</p>
-                          <p><strong>Ano de Aquisição:</strong> {data.acquisitionYear}</p>
+                          <p><strong>Término:</strong> {formatDate(data.endDate)}</p>
+                          <p><strong>Período:</strong> {formatDate(data.vacation.startDate)} até {formatDate(data.endDate)}</p>
                         </div>
                       </div>
                     );
@@ -816,7 +801,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <p className="font-bold text-slate-800">{data.employee.name}</p>
-                            <p className="text-xs text-slate-500">{data.employee.team} • {data.employee.role}</p>
+                            <p className="text-xs text-slate-500">{data.employee.team}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-bold rounded-full">

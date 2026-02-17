@@ -248,10 +248,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
     }
   };
 
-  const handleAddSkill = (e?: React.KeyboardEvent | React.MouseEvent) => {
-    if (e instanceof KeyboardEvent && e.key !== 'Enter') return;
-    e?.preventDefault(); 
-
+  const handleAddSkillClick = () => {
     const trimmed = skillInput.trim();
     if (trimmed && !selectedSkills.includes(trimmed)) {
       const newSkills = [...selectedSkills, trimmed];
@@ -262,6 +259,13 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
       if (!allSkills.includes(trimmed)) {
         setAllSkills(prev => [...prev, trimmed].sort());
       }
+    }
+  };
+
+  const handleAddSkillKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddSkillClick();
     }
   };
 
@@ -678,7 +682,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                       placeholder="Ex: Cypress, Java, Liderança..."
                       value={skillInput}
                       onChange={e => setSkillInput(e.target.value)}
-                      onKeyDown={handleAddSkill}
+                      onKeyDown={handleAddSkillKeyDown}
                       list="skills-suggestions"
                     />
                     <datalist id="skills-suggestions">
@@ -687,7 +691,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, set
                     <Tag size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
                   </div>
                   <button
-                    onClick={handleAddSkill}
+                    onClick={handleAddSkillClick}
                     title="Adicionar"
                     className="px-4 bg-blue-100 text-blue-700 rounded-xl font-bold hover:bg-blue-200 transition-colors"
                   >
