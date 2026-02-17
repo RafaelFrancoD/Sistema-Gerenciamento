@@ -16,17 +16,59 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [selectedAlertIds, setSelectedAlertIds] = useState<string[]>([]);
   const [chartTimeRange, setChartTimeRange] = useState('6m'); // State for chart filter
+  const [activeVacationsModalOpen, setActiveVacationsModalOpen] = useState(false);
+  const [expiringVacationsModalOpen, setExpiringVacationsModalOpen] = useState(false);
+  const [takenVacationsModalOpen, setTakenVacationsModalOpen] = useState(false);
+  const [riskDaysFilter, setRiskDaysFilter] = useState(30);
+  const [expiringDaysFilter, setExpiringDaysFilter] = useState(30);
   
   // Calculate stats
   const totalEmployees = employees.length;
-  const activeVacations = vacations.filter(v => {
+
+  const activeVacationsData = vacations.filter(v => {
     const now = new Date();
     const start = new Date(v.startDate);
     const end = new Date(v.endDate);
     return now >= start && now <= end;
-  }).length;
+  });
+  const activeVacations = activeVacationsData.length;
 
-  // RN07 – Alerta de vencimento 30 dias antes.
+  // Férias a vencer baseado no filtro
+  const expiringVacationsData = employees.flatMap(emp => {
+    const currentYear = new Date().getFullYear();
+    const result = [];
+    for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
+      const acquisitionYear = currentYear + yearOffset;
+      const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
+      const daysLeft = getDaysUntilDue(dueDate);
+      const vacationTaken = vacations.some(
+        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
+      );
+      if (daysLeft <= expiringDaysFilter && daysLeft >= 0 && !vacationTaken) {
+        result.push({ ...emp, daysLeft, acquisitionYear, dueDate });
+      }
+    }
+    return result;
+  });
+
+  // Férias tiradas no ano corrente
+  const currentYear = new Date().getFullYear();
+  const takenVacationsData = employees.map(emp => {
+    const empVacations = vacations.filter(v =>
+      v.employeeId === emp.id &&
+      v.status === 'approved' &&
+      v.acquisitionYear === currentYear
+    );
+    return {
+      employee: emp,
+      vacations: empVacations,
+      count: empVacations.length
+    };
+  }).filter(data => data.count > 0);
+
+  const totalVacationsTaken = takenVacationsData.reduce((sum, data) => sum + data.count, 0);
+
+  // RN07 – Alerta de vencimento baseado no filtro de dias.
   const alerts = employees.flatMap(emp => {
     const currentYear = new Date().getFullYear();
     const potentialAlerts = [];
@@ -40,7 +82,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear && v.status === 'approved'
       );
 
-      if (daysLeft < 30 && !vacationTakenForAcquisitionYear) {
+      if (daysLeft <= riskDaysFilter && daysLeft >= 0 && !vacationTakenForAcquisitionYear) {
         potentialAlerts.push({ ...emp, daysLeft, acquisitionYear, dueDate });
       }
     }
@@ -53,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     ))
   );
 
-  const pendingVacations = alerts.length;
+  const pendingVacations = expiringVacationsData.length;
 
   // --- CONFLICT DETECTION ---
   // Detect vacation conflicts (overlapping periods, QA conflicts)
@@ -212,28 +254,70 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
       
       {/* KPI Cards - Responsive Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
-        {[
-          { icon: Users, label: "Total Colaboradores", value: totalEmployees, color: "blue" },
-          { icon: CheckCircle, label: "Férias Ativas", value: activeVacations, color: "green" },
-          { icon: Clock, label: "A vencer (30 dias)", value: pendingVacations, color: "orange" },
-          { icon: Zap, label: "Eficiência do Time", value: "98%", color: "purple" }
-        ].map((kpi, idx) => (
-          <div 
-            key={idx}
-            className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-blue-200 cursor-default"
-          >
-            <div className={`absolute top-0 right-0 w-24 h-24 bg-${kpi.color}-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500`}></div>
-            <div className="relative z-10 flex items-center gap-4">
-              <div className={`p-3 bg-${kpi.color}-100 text-${kpi.color}-600 rounded-xl shadow-sm group-hover:scale-110 transition-transform`}>
-                <kpi.icon size={26} />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{kpi.label}</p>
-                <p className="text-3xl font-bold text-slate-800">{kpi.value}</p>
-              </div>
+        {/* Total Colaboradores */}
+        <div className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-blue-200 cursor-default">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+              <Users size={26} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Colaboradores</p>
+              <p className="text-3xl font-bold text-slate-800">{totalEmployees}</p>
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* Férias Ativas - Clicável */}
+        <div
+          onClick={() => setActiveVacationsModalOpen(true)}
+          className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-green-200 cursor-pointer"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-green-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="p-3 bg-green-100 text-green-600 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+              <CheckCircle size={26} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Férias Ativas</p>
+              <p className="text-3xl font-bold text-slate-800">{activeVacations}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* A vencer - Clicável */}
+        <div
+          onClick={() => setExpiringVacationsModalOpen(true)}
+          className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-orange-200 cursor-pointer"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="p-3 bg-orange-100 text-orange-600 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+              <Clock size={26} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">A vencer ({expiringDaysFilter} dias)</p>
+              <p className="text-3xl font-bold text-slate-800">{pendingVacations}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Férias Tiradas no Ano - Clicável */}
+        <div
+          onClick={() => setTakenVacationsModalOpen(true)}
+          className="group bg-white p-6 rounded-2xl border border-slate-100 relative overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-purple-200 cursor-pointer"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500"></div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="p-3 bg-purple-100 text-purple-600 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+              <Zap size={26} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Férias Tiradas {currentYear}</p>
+              <p className="text-3xl font-bold text-slate-800">{totalVacationsTaken}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8">
@@ -321,13 +405,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
             <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black/60 to-transparent"></div>
 
             <div className="p-6 relative z-10 h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="bg-red-500/20 p-2 rounded-full backdrop-blur-sm border border-red-400/30">
-                  <AlertTriangle className="text-red-200" size={20} />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="bg-red-500/20 p-2 rounded-full backdrop-blur-sm border border-red-400/30">
+                    <AlertTriangle className="text-red-200" size={20} />
+                  </div>
+                  <h3 className="text-lg font-bold text-white tracking-wide">
+                    Risco de Vencimento
+                  </h3>
                 </div>
-                <h3 className="text-lg font-bold text-white tracking-wide">
-                  Risco de Vencimento
-                </h3>
+                <select
+                  value={riskDaysFilter}
+                  onChange={(e) => setRiskDaysFilter(parseInt(e.target.value))}
+                  className="text-xs bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-2 py-1 text-white focus:ring-0 cursor-pointer hover:bg-white/20"
+                >
+                  <option value={15} className="bg-slate-800">15 dias</option>
+                  <option value={30} className="bg-slate-800">30 dias</option>
+                  <option value={60} className="bg-slate-800">60 dias</option>
+                  <option value={90} className="bg-slate-800">90 dias</option>
+                </select>
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2 max-h-[400px]">
@@ -455,11 +551,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="p-4 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
               <div className="flex justify-between items-center mb-3 px-2">
                 <span className="text-xs font-bold uppercase text-slate-500">Colaboradores em Risco ({alerts.length})</span>
-                <button 
+                <button
                   onClick={() => setSelectedAlertIds(selectedAlertIds.length === alerts.length ? [] : alerts.map(a => a.id))}
                   className="text-xs font-bold text-blue-600 hover:underline"
                 >
@@ -471,12 +567,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                 {alerts.map(alert => {
                   const isSelected = selectedAlertIds.includes(alert.id);
                   return (
-                    <div 
+                    <div
                       key={alert.id}
                       onClick={() => toggleAlertSelection(alert.id)}
                       className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                        isSelected 
-                          ? 'bg-white border-blue-500 shadow-sm' 
+                        isSelected
+                          ? 'bg-white border-blue-500 shadow-sm'
                           : 'bg-white border-slate-200 opacity-60 hover:opacity-100'
                       }`}
                     >
@@ -499,23 +595,256 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              <button 
-                onClick={() => setIsEmailModalOpen(false)} 
+              <button
+                onClick={() => setIsEmailModalOpen(false)}
                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
               >
                 Cancelar
               </button>
-              <button 
-                onClick={handleConfirmSend} 
+              <button
+                onClick={handleConfirmSend}
                 disabled={selectedAlertIds.length === 0}
                 className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all ${
-                  selectedAlertIds.length > 0 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-900/20 hover:-translate-y-0.5' 
+                  selectedAlertIds.length > 0
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-900/20 hover:-translate-y-0.5'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 }`}
               >
-                <Send size={16} /> 
+                <Send size={16} />
                 Enviar ({selectedAlertIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Férias Ativas */}
+      {activeVacationsModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-green-50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-green-100 rounded-full text-green-600">
+                  <CheckCircle size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-green-900">Férias Ativas</h3>
+                  <p className="text-xs text-slate-500">Colaboradores atualmente de férias</p>
+                </div>
+              </div>
+              <button onClick={() => setActiveVacationsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
+              {activeVacationsData.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">Nenhum colaborador em férias no momento.</p>
+              ) : (
+                <div className="space-y-3">
+                  {activeVacationsData.map(vac => {
+                    const emp = employees.find(e => e.id === vac.employeeId);
+                    if (!emp) return null;
+                    const formatDate = (iso: string) => {
+                      const parts = iso.split('-');
+                      if (parts.length === 3) {
+                        const year = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const day = parseInt(parts[2], 10);
+                        return new Date(year, month, day).toLocaleDateString('pt-BR');
+                      }
+                      return iso;
+                    };
+                    return (
+                      <div key={vac.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-slate-800">{emp.name}</p>
+                            <p className="text-xs text-slate-500">{emp.team} • {emp.role}</p>
+                          </div>
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">Ativo</span>
+                        </div>
+                        <div className="mt-3 text-sm text-slate-600">
+                          <p><strong>Período:</strong> {formatDate(vac.startDate)} até {formatDate(vac.endDate)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+              <button
+                onClick={() => setActiveVacationsModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg font-medium transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Férias a Vencer */}
+      {expiringVacationsModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-orange-50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-orange-100 rounded-full text-orange-600">
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-orange-900">Férias a Vencer</h3>
+                  <p className="text-xs text-slate-500">Colaboradores com férias próximas do vencimento</p>
+                </div>
+              </div>
+              <button onClick={() => setExpiringVacationsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-4 bg-orange-50/50 border-b border-orange-100 flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-700">Filtrar por dias:</span>
+              <select
+                value={expiringDaysFilter}
+                onChange={(e) => setExpiringDaysFilter(parseInt(e.target.value))}
+                className="text-sm bg-white border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 cursor-pointer"
+              >
+                <option value={15}>15 dias</option>
+                <option value={30}>30 dias</option>
+                <option value={60}>60 dias</option>
+                <option value={90}>90 dias</option>
+              </select>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
+              {expiringVacationsData.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">Nenhum colaborador com férias próximas do vencimento.</p>
+              ) : (
+                <div className="space-y-3">
+                  {expiringVacationsData.map(data => {
+                    const formatDate = (iso: string) => {
+                      const parts = iso.split('-');
+                      if (parts.length === 3) {
+                        const year = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const day = parseInt(parts[2], 10);
+                        return new Date(year, month, day).toLocaleDateString('pt-BR');
+                      }
+                      return iso;
+                    };
+                    return (
+                      <div key={`${data.id}-${data.acquisitionYear}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-slate-800">{data.name}</p>
+                            <p className="text-xs text-slate-500">{data.team} • {data.role}</p>
+                          </div>
+                          <span className={`px-2 py-1 text-xs font-bold rounded-full ${
+                            data.daysLeft < 15 ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'
+                          }`}>
+                            {data.daysLeft} dias
+                          </span>
+                        </div>
+                        <div className="mt-3 text-sm text-slate-600">
+                          <p><strong>Vencimento:</strong> {formatDate(data.dueDate)}</p>
+                          <p><strong>Ano de Aquisição:</strong> {data.acquisitionYear}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+              <button
+                onClick={() => setExpiringVacationsModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg font-medium transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Férias Tiradas no Ano */}
+      {takenVacationsModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-purple-50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-100 rounded-full text-purple-600">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-purple-900">Férias Tiradas em {currentYear}</h3>
+                  <p className="text-xs text-slate-500">Colaboradores que já tiraram férias este ano</p>
+                </div>
+              </div>
+              <button onClick={() => setTakenVacationsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
+              {takenVacationsData.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">Nenhum colaborador tirou férias em {currentYear} ainda.</p>
+              ) : (
+                <div className="space-y-3">
+                  {takenVacationsData.map(data => {
+                    const formatDate = (iso: string) => {
+                      const parts = iso.split('-');
+                      if (parts.length === 3) {
+                        const year = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const day = parseInt(parts[2], 10);
+                        return new Date(year, month, day).toLocaleDateString('pt-BR');
+                      }
+                      return iso;
+                    };
+                    const hasTwoPeriodsOrMore = data.count >= 2;
+                    return (
+                      <div key={data.employee.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-bold text-slate-800">{data.employee.name}</p>
+                            <p className="text-xs text-slate-500">{data.employee.team} • {data.employee.role}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-bold rounded-full">
+                              {data.count} período{data.count > 1 ? 's' : ''}
+                            </span>
+                            {hasTwoPeriodsOrMore && (
+                              <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">
+                                ✓ Completo
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {data.vacations.map((vac, idx) => (
+                            <div key={vac.id} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg">
+                              <span className="font-semibold">{idx + 1}° Período:</span> {formatDate(vac.startDate)} até {formatDate(vac.endDate)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+              <button
+                onClick={() => setTakenVacationsModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg font-medium transition-colors"
+              >
+                Fechar
               </button>
             </div>
           </div>
