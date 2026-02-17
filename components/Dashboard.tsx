@@ -55,6 +55,76 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
 
   const pendingVacations = alerts.length;
 
+  // --- CONFLICT DETECTION ---
+  // Detect vacation conflicts (overlapping periods, QA conflicts)
+  const conflictData = React.useMemo(() => {
+    const conflicts: Array<{
+      type: 'overlap' | 'qa';
+      employees: string[];
+      period: { start: string; end: string };
+      team?: string;
+    }> = [];
+
+    const approvedOrPlanned = vacations.filter(v =>
+      v.status === 'approved' || v.status === 'planned' || v.status === 'pending'
+    );
+
+    // Check for overlapping vacation periods
+    for (let i = 0; i < approvedOrPlanned.length; i++) {
+      for (let j = i + 1; j < approvedOrPlanned.length; j++) {
+        const v1 = approvedOrPlanned[i];
+        const v2 = approvedOrPlanned[j];
+
+        const start1 = new Date(v1.startDate);
+        const end1 = new Date(v1.endDate);
+        const start2 = new Date(v2.startDate);
+        const end2 = new Date(v2.endDate);
+
+        // Check if periods overlap
+        const hasOverlap = !(end1 < start2 || start1 > end2);
+
+        if (hasOverlap) {
+          const emp1 = employees.find(e => e.id === v1.employeeId);
+          const emp2 = employees.find(e => e.id === v2.employeeId);
+
+          if (emp1 && emp2) {
+            // Check if it's a QA conflict (both QAs from same team)
+            if (emp1.role === 'QA' && emp2.role === 'QA' && emp1.team === emp2.team) {
+              conflicts.push({
+                type: 'qa',
+                employees: [emp1.name, emp2.name],
+                period: {
+                  start: v1.startDate < v2.startDate ? v1.startDate : v2.startDate,
+                  end: v1.endDate > v2.endDate ? v1.endDate : v2.endDate
+                },
+                team: emp1.team
+              });
+            } else {
+              // General overlap conflict
+              conflicts.push({
+                type: 'overlap',
+                employees: [emp1.name, emp2.name],
+                period: {
+                  start: v1.startDate < v2.startDate ? v1.startDate : v2.startDate,
+                  end: v1.endDate > v2.endDate ? v1.endDate : v2.endDate
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Remove duplicate conflicts
+    return conflicts.filter((conflict, index, self) =>
+      index === self.findIndex(c =>
+        c.type === conflict.type &&
+        JSON.stringify(c.employees.sort()) === JSON.stringify(conflict.employees.sort()) &&
+        c.period.start === conflict.period.start
+      )
+    );
+  }, [vacations, employees]);
+
   // --- DYNAMIC CHART DATA ---
   const generateChartData = (vacationData: VacationRequest[], timeRange: '6m' | '1y') => {
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -290,6 +360,82 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
           </div>
         </div>
       </div>
+
+      {/* Conflicts Section */}
+      {conflictData.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-orange-200 overflow-hidden">
+          <div className="p-4 border-b border-orange-100 bg-orange-50 flex items-center gap-2">
+            <AlertTriangle className="text-orange-600" size={20} />
+            <h3 className="font-bold text-orange-900">Conflitos Detectados ({conflictData.length})</h3>
+          </div>
+          <div className="p-6">
+            <p className="text-sm text-slate-600 mb-4">
+              Os seguintes conflitos de férias foram identificados e podem requerer atenção:
+            </p>
+            <div className="space-y-4">
+              {conflictData.map((conflict, index) => {
+                const formatDate = (iso: string) => {
+                  const parts = iso.split('-');
+                  if (parts.length === 3) {
+                    const year = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    const day = parseInt(parts[2], 10);
+                    return new Date(year, month, day).toLocaleDateString('pt-BR');
+                  }
+                  return iso;
+                };
+
+                return (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-xl border-2 ${
+                      conflict.type === 'qa'
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-yellow-50 border-yellow-200'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        conflict.type === 'qa' ? 'bg-red-100' : 'bg-yellow-100'
+                      }`}>
+                        <AlertTriangle
+                          size={18}
+                          className={conflict.type === 'qa' ? 'text-red-600' : 'text-yellow-600'}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                            conflict.type === 'qa'
+                              ? 'bg-red-200 text-red-800'
+                              : 'bg-yellow-200 text-yellow-800'
+                          }`}>
+                            {conflict.type === 'qa' ? 'Conflito de QA' : 'Sobreposição de Período'}
+                          </span>
+                          {conflict.team && (
+                            <span className="text-xs text-slate-500">Time: {conflict.team}</span>
+                          )}
+                        </div>
+                        <p className="font-medium text-slate-800 mb-1">
+                          {conflict.employees.join(' e ')}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          Período: {formatDate(conflict.period.start)} até {formatDate(conflict.period.end)}
+                        </p>
+                        {conflict.type === 'qa' && (
+                          <p className="text-xs text-red-700 mt-2 font-medium">
+                            ⚠ Atenção: Ambos os QAs do time estarão ausentes simultaneamente!
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Email Selection Modal */}
       {isEmailModalOpen && (
