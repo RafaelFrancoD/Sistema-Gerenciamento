@@ -16,7 +16,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   const [activeVacationsModalOpen, setActiveVacationsModalOpen] = useState(false);
   const [expiringVacationsModalOpen, setExpiringVacationsModalOpen] = useState(false);
   const [takenVacationsModalOpen, setTakenVacationsModalOpen] = useState(false);
-  const [riskDaysFilter, setRiskDaysFilter] = useState(90);
   const [expiringDaysFilter, setExpiringDaysFilter] = useState(30);
   
   // Calculate stats
@@ -64,35 +63,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
   }).filter(data => data.count > 0);
 
   const totalVacationsTaken = takenVacationsData.reduce((sum, data) => sum + data.count, 0);
-
-  // Risco de vencimento - colaboradores com férias não solicitadas a partir de 90 dias
-  const alerts = employees.flatMap(emp => {
-    const currentYear = new Date().getFullYear();
-    const potentialAlerts = [];
-
-    for (let yearOffset = 0; yearOffset <= 1; yearOffset++) {
-      const acquisitionYear = currentYear + yearOffset;
-      const dueDate = calculateVacationDueDate(emp.admissionDate, acquisitionYear);
-      const daysLeft = getDaysUntilDue(dueDate);
-
-      // Verificar se há QUALQUER solicitação (não apenas aprovada) para esse ano de aquisição
-      const hasAnyVacationRequest = vacations.some(
-        v => v.employeeId === emp.id && v.acquisitionYear === acquisitionYear
-      );
-
-      // Alerta se não há solicitação E está dentro de 90 dias do vencimento
-      if (!hasAnyVacationRequest && daysLeft <= 90 && daysLeft >= 0) {
-        potentialAlerts.push({ ...emp, daysLeft, acquisitionYear, dueDate });
-      }
-    }
-    return potentialAlerts;
-  })
-  .sort((a, b) => a.daysLeft - b.daysLeft)
-  .filter((alert, index, self) =>
-    index === self.findIndex((a) => (
-      a.id === alert.id
-    ))
-  );
 
   const pendingVacations = expiringVacationsData.length;
 
@@ -219,13 +189,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
           </h2>
           <p className="text-slate-500 mt-1 text-sm md:text-base">Monitoramento em tempo real da equipe</p>
         </div>
-        
-        <div className="bg-white px-4 py-2 rounded-full shadow-md border border-blue-100 flex items-center gap-3 w-full md:w-auto justify-center md:justify-start">
-          <div className={`w-2 h-2 rounded-full ${alerts.length > 0 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
-          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-            Sistema de Automação: <span className={alerts.length > 0 ? "text-red-600" : "text-green-600"}>{alerts.length > 0 ? 'Pendente' : 'Monitorando'}</span>
-          </span>
-        </div>
       </div>
       
       {/* KPI Cards - Responsive Grid */}
@@ -296,10 +259,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8">
-        
+      <div className="grid grid-cols-1 gap-6 md:gap-8">
+
         {/* Chart Section */}
-        <div className="xl:col-span-8 bg-white p-4 md:p-8 rounded-3xl shadow-lg border border-slate-100 transition-all hover:shadow-xl">
+        <div className="bg-white p-4 md:p-8 rounded-3xl shadow-lg border border-slate-100 transition-all hover:shadow-xl">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg md:text-xl font-bold text-slate-800">Tendência de Férias</h3>
             <select 
@@ -339,63 +302,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                 />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Alerts Section */}
-        <div className="xl:col-span-4 flex flex-col gap-6">
-          <div className="flex-1 bg-gradient-to-br from-red-900 via-red-800 to-rose-900 rounded-3xl shadow-2xl overflow-hidden border border-red-700/50 relative group min-h-[300px]">
-            <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500 rounded-full filter blur-[50px] opacity-30 group-hover:opacity-50 transition-opacity duration-700"></div>
-            <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black/60 to-transparent"></div>
-
-            <div className="p-6 relative z-10 h-full flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="bg-red-500/20 p-2 rounded-full backdrop-blur-sm border border-red-400/30">
-                    <AlertTriangle className="text-red-200" size={20} />
-                  </div>
-                  <h3 className="text-lg font-bold text-white tracking-wide">
-                    Risco de Vencimento
-                  </h3>
-                </div>
-                <select
-                  value={riskDaysFilter}
-                  onChange={(e) => setRiskDaysFilter(parseInt(e.target.value))}
-                  className="text-xs bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-2 py-1 text-white focus:ring-0 cursor-pointer hover:bg-white/20"
-                >
-                  <option value={30} className="bg-slate-800">30 dias</option>
-                  <option value={60} className="bg-slate-800">60 dias</option>
-                  <option value={90} className="bg-slate-800">90 dias</option>
-                </select>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2 max-h-[400px]">
-                {alerts.length === 0 ? (
-                  <p className="text-red-200/60 text-center mt-10">Tudo sob controle.</p>
-                ) : (
-                  alerts.map(alert => (
-                    <div key={alert.id} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-xl hover:bg-white/20 transition-colors">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-white text-sm">{alert.name}</p>
-                          <p className="text-xs text-red-200">{alert.team}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-bold text-white leading-none">{alert.daysLeft}</p>
-                          <p className="text-[10px] uppercase tracking-wider text-red-300">Dias Restantes</p>
-                        </div>
-                      </div>
-                      <div className="w-full bg-black/30 h-1.5 rounded-full mt-3 overflow-hidden">
-                        <div 
-                          className="h-full bg-red-400 rounded-full" 
-                          style={{ width: `${Math.max(0, 100 - (alert.daysLeft / 30) * 100)}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>

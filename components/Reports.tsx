@@ -82,22 +82,19 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
     const subject = `Aviso de Férias Aprovadas - ${selectedEmployee.name}`;
     let body = `Prezado(a) ${selectedEmployee.name},\n\n` +
                  `Comunicamos que suas férias foram aprovadas.\n\n` +
-                 `--- DETALHES DO PERÍODO ---\n` +
+                 `INFORMAÇÕES DO COLABORADOR\n` +
+                 `Time: ${selectedEmployee.team}\n` +
+                 `Data de Admissão: ${formatDate(selectedEmployee.admissionDate)}\n\n` +
+                 `DETALHES DO PERÍODO\n` +
                  `Período: ${formatDate(selectedVacation.startDate)} a ${formatDate(selectedVacation.endDate)}\n` +
                  `Duração: ${selectedVacation.days} dias\n` +
                  `Ano de Aquisição de Referência: ${selectedVacation.acquisitionYear || 'N/A'}\n` +
-                 `Status: ${STATUS_TRANSLATION[selectedVacation.status] || selectedVacation.status}\n\n`;
+                 `Status: Aprovada\n\n` +
+                 `Lembre-se de realizar o comunicado ao seu time e a passagem de conhecimento para outro QA com antecedência, seguindo as diretrizes internas contidas no documento\n` +
+                 `PCR-QA - Procedimento para período de férias V2.doc https://shiftbrasil.sharepoint.com/:w:/s/team.teste/IQCXW7G2Sz1xS4UdJcr8UFp4AbF9y2UfZFI0GlyqMUOxIVs?e=OFBobx\n\n` +
+                 `Atenciosamente,\n` +
+                 `Gisela Nossa - Supervisora de Qualidade`;
 
-    if (selectedVacation.specialApprovalReason) {
-      body += `Observações da Aprovação: ${selectedVacation.specialApprovalReason}\n\n`;
-    }
-
-    body += `--- INFORMAÇÕES DO COLABORADOR ---\n` +
-            `Time: ${selectedEmployee.team}\n` +
-            `Data de Admissão: ${formatDate(selectedEmployee.admissionDate)}\n\n` +
-            `Lembre-se de realizar a passagem de conhecimento para seu time e seguir as diretrizes internas.\n\n` +
-            `Atenciosamente,\nGestão de RH`;
-    
     window.location.href = `mailto:${selectedEmployee.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     setVacations(prevVacations =>
