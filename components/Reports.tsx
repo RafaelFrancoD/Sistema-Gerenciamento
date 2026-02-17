@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
-import { Download, FileText, Mail, File as FileIcon } from 'lucide-react';
+import { Download, FileText, Mail, File as FileIcon, Search, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import { Employee, VacationRequest } from '../types';
 import { STATUS_TRANSLATION } from '../constants';
+
+// Extend jsPDF type to include autoTable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+  }
+}
 
 interface ReportsProps {
   employees: Employee[];
@@ -10,8 +19,12 @@ interface ReportsProps {
   setVacations: React.Dispatch<React.SetStateAction<VacationRequest[]>>;
 }
 
+type SortOrder = 'name-asc' | 'name-desc' | 'date-asc' | 'date-desc';
+
 export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacations }) => {
   const [selectedVacationId, setSelectedVacationId] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('name-asc');
 
   const selectedVacation = vacations.find(v => v.id === selectedVacationId);
   const selectedEmployee = selectedVacation ? employees.find(e => e.id === selectedVacation.employeeId) : null;
@@ -71,9 +84,87 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Relatorio Ferias");
-    
+
     const fileName = `Relatorio_Ferias_${selectedEmployee?.name.replace(/\s+/g, '_')}.${format}`;
     XLSX.writeFile(wb, fileName);
+  };
+
+  // Export all scheduled vacations
+  const getAllVacationsData = () => {
+    const approvedOrNotified = vacations.filter(v => v.status === 'approved' || v.status === 'notified');
+
+    return approvedOrNotified.map(vac => {
+      const emp = employees.find(e => e.id === vac.employeeId);
+      const periodNumber = getVacationPeriodNumber(vac);
+      return {
+        "Colaborador": emp?.name || 'Desconhecido',
+        "Email": emp?.email || '',
+        "Time": emp?.team || '',
+        "Data de Admissão": formatDate(emp?.admissionDate),
+        "Ano Aquisição": vac.acquisitionYear || 'N/A',
+        "Período": periodNumber > 0 ? `${periodNumber}°` : 'N/A',
+        "Início Férias": formatDate(vac.startDate),
+        "Fim Férias": formatDate(vac.endDate),
+        "Dias": vac.days,
+        "Status": STATUS_TRANSLATION[vac.status] || vac.status,
+        "Observações": vac.specialApprovalReason || ''
+      };
+    });
+  };
+
+  const handleExportAllExcel = () => {
+    const data = getAllVacationsData();
+    if (data.length === 0) {
+      alert('Nenhuma férias aprovada ou notificada para exportar.');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Todas Ferias");
+
+    const fileName = `Relatorio_Todas_Ferias_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const handleExportAllPDF = () => {
+    const data = getAllVacationsData();
+    if (data.length === 0) {
+      alert('Nenhuma férias aprovada ou notificada para exportar.');
+      return;
+    }
+
+    const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation
+
+    doc.setFontSize(18);
+    doc.text('Relatório de Todas as Férias Agendadas', 14, 15);
+
+    doc.setFontSize(10);
+    doc.text(`Emitido em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
+
+    const tableData = data.map(row => [
+      row["Colaborador"],
+      row["Time"],
+      row["Data de Admissão"],
+      row["Ano Aquisição"],
+      row["Período"],
+      row["Início Férias"],
+      row["Fim Férias"],
+      row["Dias"],
+      row["Status"]
+    ]);
+
+    doc.autoTable({
+      startY: 28,
+      head: [['Colaborador', 'Time', 'Admissão', 'Ano Aquis.', 'Período', 'Início', 'Fim', 'Dias', 'Status']],
+      body: tableData,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [30, 58, 138] },
+      margin: { top: 28 }
+    });
+
+    const fileName = `Relatorio_Todas_Ferias_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
   };
 
   const handleSendEmail = () => {
@@ -105,16 +196,86 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
     alert('Email pronto para ser enviado. O status da solicitação foi atualizado para "Notificado".');
   };
 
-  const approvedOrNotifiedVacations = vacations.filter(v => v.status === 'approved' || v.status === 'notified');
+  // Filter and sort vacations list
+  const approvedOrNotifiedVacations = vacations
+    .filter(v => v.status === 'approved' || v.status === 'notified')
+    .filter(v => {
+      if (!searchTerm) return true;
+      const emp = employees.find(e => e.id === v.employeeId);
+      return emp?.name.toLowerCase().includes(searchTerm.toLowerCase());
+    })
+    .sort((a, b) => {
+      const empA = employees.find(e => e.id === a.employeeId);
+      const empB = employees.find(e => e.id === b.employeeId);
+
+      if (sortOrder === 'name-asc') {
+        return (empA?.name || '').localeCompare(empB?.name || '');
+      } else if (sortOrder === 'name-desc') {
+        return (empB?.name || '').localeCompare(empA?.name || '');
+      } else if (sortOrder === 'date-asc') {
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      } else {
+        return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+      }
+    });
 
   return (
     <div className="space-y-6">
       <h2 className="text-3xl font-bold text-blue-900">Relatórios e Exportação</h2>
-      <p className="text-slate-600">Selecione uma solicitação de férias aprovada para gerar o documento.</p>
+      <p className="text-slate-600">Selecione uma solicitação de férias aprovada para gerar o documento ou exporte todas as férias.</p>
+
+      {/* Export All Section */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl shadow-sm border border-blue-200">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-blue-900 mb-1">Exportar Todas as Férias</h3>
+            <p className="text-sm text-slate-600">Gere um relatório completo com todas as férias aprovadas e notificadas.</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExportAllPDF}
+              className="px-4 py-2.5 border rounded-lg font-medium flex items-center gap-2 border-red-600 text-red-700 bg-white hover:bg-red-50 shadow-sm"
+            >
+              <FileIcon size={18} /> Exportar PDF
+            </button>
+            <button
+              onClick={handleExportAllExcel}
+              className="px-4 py-2.5 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 bg-white hover:bg-green-50 shadow-sm"
+            >
+              <FileSpreadsheet size={18} /> Exportar Excel
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-blue-100 lg:col-span-1 h-fit">
-          <label className="block text-sm font-medium text-slate-700 mb-2">Selecione o Agendamento</label>
+          <label className="block text-sm font-medium text-slate-700 mb-3">Selecione o Agendamento</label>
+
+          {/* Search Input */}
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Pesquisar por nome..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          {/* Sort Dropdown */}
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+            className="w-full mb-3 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+          >
+            <option value="name-asc">Nome (A-Z)</option>
+            <option value="name-desc">Nome (Z-A)</option>
+            <option value="date-asc">Data (Mais Antiga)</option>
+            <option value="date-desc">Data (Mais Recente)</option>
+          </select>
+
           <div className="space-y-2 max-h-[500px] overflow-y-auto">
             {approvedOrNotifiedVacations.length > 0 ? approvedOrNotifiedVacations.map(vac => {
               const emp = employees.find(e => e.id === vac.employeeId);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { VacationRequest, Employee } from '../types';
 import { getSuggestedMonths, getSuggestedDatesForMonth, validateVacationRequest, addDays } from '../utils/dateLogic';
-import { Calendar, Users, Search, Check, X as IconX, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
+import { Calendar, Users, Search, Check, X as IconX, AlertTriangle, Edit2, Trash2, ArrowUpDown } from 'lucide-react';
 import { STATUS_COLORS, STATUS_TRANSLATION } from '../constants';
 
 interface VacationManagerProps {
@@ -10,6 +10,9 @@ interface VacationManagerProps {
   setVacations: React.Dispatch<React.SetStateAction<VacationRequest[]>>;
 }
 
+type SortColumn = 'name' | 'admission' | 'period' | 'startDate' | 'status';
+type SortDirection = 'asc' | 'desc';
+
 export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vacations, setVacations }) => {
   // Form State
   const [employeeId, setEmployeeId] = useState('');
@@ -17,7 +20,7 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
   const [startDate, setStartDate] = useState('');
   const [days, setDays] = useState(30);
   const [endDate, setEndDate] = useState('');
-  
+
   // Validation State
   const [validationResult, setValidationResult] = useState<{ isValid: boolean; messages: string[]; isSpecialApproval: boolean } | null>(null);
   const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
@@ -28,6 +31,11 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [suggestedDates, setSuggestedDates] = useState<Date[]>([]);
   const [impediments, setImpediments] = useState<string[]>([]);
+
+  // Table State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const formatDate = (iso?: string) => {
     if (!iso) return '';
@@ -158,12 +166,66 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
   
   const getEmployeeName = (id: string) => employees.find(e => e.id === id)?.name || 'Desconhecido';
 
-  // Sort vacations by employee name alphabetically
-  const sortedVacations = [...vacations].sort((a, b) => {
-    const nameA = getEmployeeName(a.employeeId).toLowerCase();
-    const nameB = getEmployeeName(b.employeeId).toLowerCase();
-    return nameA.localeCompare(nameB);
-  });
+  // Helper function to determine the period number (1st, 2nd, 3rd) for a vacation request
+  const getVacationPeriodNumber = (vacation: VacationRequest): number => {
+    if (!vacation.acquisitionYear) return 0;
+
+    // Get all vacations for the same employee and acquisition year, sorted by start date
+    const employeeVacations = vacations
+      .filter(v =>
+        v.employeeId === vacation.employeeId &&
+        v.acquisitionYear === vacation.acquisitionYear &&
+        (v.status === 'approved' || v.status === 'notified' || v.status === 'planned' || v.status === 'pending')
+      )
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+    // Find the index of the current vacation and return period number (1-indexed)
+    const index = employeeVacations.findIndex(v => v.id === vacation.id);
+    return index >= 0 ? index + 1 : 0;
+  };
+
+  // Handle column sorting
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort vacations
+  const filteredAndSortedVacations = [...vacations]
+    .filter(vac => {
+      if (!searchTerm) return true;
+      const employeeName = getEmployeeName(vac.employeeId).toLowerCase();
+      return employeeName.includes(searchTerm.toLowerCase());
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+
+      if (sortColumn === 'name') {
+        const nameA = getEmployeeName(a.employeeId).toLowerCase();
+        const nameB = getEmployeeName(b.employeeId).toLowerCase();
+        comparison = nameA.localeCompare(nameB);
+      } else if (sortColumn === 'admission') {
+        const empA = employees.find(e => e.id === a.employeeId);
+        const empB = employees.find(e => e.id === b.employeeId);
+        const dateA = empA?.admissionDate || '';
+        const dateB = empB?.admissionDate || '';
+        comparison = dateA.localeCompare(dateB);
+      } else if (sortColumn === 'period') {
+        const periodA = getVacationPeriodNumber(a);
+        const periodB = getVacationPeriodNumber(b);
+        comparison = periodA - periodB;
+      } else if (sortColumn === 'startDate') {
+        comparison = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      } else if (sortColumn === 'status') {
+        comparison = a.status.localeCompare(b.status);
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
 
   return (
     <div className="space-y-6">
@@ -209,12 +271,111 @@ export const VacationManager: React.FC<VacationManagerProps> = ({ employees, vac
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6"><h3 className="text-xl font-bold text-slate-800 mb-1">Férias Agendadas</h3><p className="text-sm text-slate-500">Lista de todas as férias agendadas e seus status.</p></div>
+        <div className="p-6">
+          <h3 className="text-xl font-bold text-slate-800 mb-1">Férias Agendadas</h3>
+          <p className="text-sm text-slate-500 mb-4">Lista de todas as férias agendadas e seus status.</p>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              placeholder="Pesquisar por nome do colaborador..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
-            <thead className="bg-slate-50/50 text-slate-600 text-xs uppercase"><tr><th className="p-4 font-semibold">Colaborador</th><th className="p-4 font-semibold">Período</th><th className="p-4 font-semibold text-center">Status</th><th className="p-4 font-semibold text-center">Ações</th></tr></thead>
+            <thead className="bg-slate-50/50 text-slate-600 text-xs uppercase">
+              <tr>
+                <th className="p-4 font-semibold cursor-pointer hover:bg-slate-100" onClick={() => handleSort('name')}>
+                  <div className="flex items-center gap-2">
+                    Colaborador
+                    <ArrowUpDown size={14} className={sortColumn === 'name' ? 'text-blue-600' : 'text-slate-400'} />
+                  </div>
+                </th>
+                <th className="p-4 font-semibold cursor-pointer hover:bg-slate-100" onClick={() => handleSort('admission')}>
+                  <div className="flex items-center gap-2">
+                    Data Admissão
+                    <ArrowUpDown size={14} className={sortColumn === 'admission' ? 'text-blue-600' : 'text-slate-400'} />
+                  </div>
+                </th>
+                <th className="p-4 font-semibold cursor-pointer hover:bg-slate-100" onClick={() => handleSort('period')}>
+                  <div className="flex items-center gap-2">
+                    N° Período
+                    <ArrowUpDown size={14} className={sortColumn === 'period' ? 'text-blue-600' : 'text-slate-400'} />
+                  </div>
+                </th>
+                <th className="p-4 font-semibold cursor-pointer hover:bg-slate-100" onClick={() => handleSort('startDate')}>
+                  <div className="flex items-center gap-2">
+                    Período
+                    <ArrowUpDown size={14} className={sortColumn === 'startDate' ? 'text-blue-600' : 'text-slate-400'} />
+                  </div>
+                </th>
+                <th className="p-4 font-semibold text-center cursor-pointer hover:bg-slate-100" onClick={() => handleSort('status')}>
+                  <div className="flex items-center justify-center gap-2">
+                    Status
+                    <ArrowUpDown size={14} className={sortColumn === 'status' ? 'text-blue-600' : 'text-slate-400'} />
+                  </div>
+                </th>
+                <th className="p-4 font-semibold text-center">Ações</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-slate-100">
-              {sortedVacations.length === 0 ? (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma solicitação encontrada.</td></tr>) : (sortedVacations.map((req) => (<tr key={req.id} className="hover:bg-slate-50/50"><td className="p-4 font-medium text-slate-800">{getEmployeeName(req.employeeId)}</td><td className="p-4 text-slate-600">{formatDate(req.startDate)} - {formatDate(req.endDate)}</td><td className="p-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[req.status]}`}>{STATUS_TRANSLATION[req.status]}</span></td><td className="p-4 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => handleEditVacation(req.id)} title="Editar" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"><Edit2 size={16} /></button><button onClick={() => handleDeleteVacation(req.id)} title="Excluir" className="p-2 rounded-lg hover:bg-red-50 text-red-600"><Trash2 size={16} /></button></div></td></tr>)))}
+              {filteredAndSortedVacations.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400">
+                    {searchTerm ? 'Nenhuma solicitação encontrada para a pesquisa.' : 'Nenhuma solicitação encontrada.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedVacations.map((req) => {
+                  const employee = employees.find(e => e.id === req.employeeId);
+                  const periodNumber = getVacationPeriodNumber(req);
+                  return (
+                    <tr key={req.id} className="hover:bg-slate-50/50">
+                      <td className="p-4 font-medium text-slate-800">{employee?.name || 'Desconhecido'}</td>
+                      <td className="p-4 text-slate-600">{formatDate(employee?.admissionDate)}</td>
+                      <td className="p-4">
+                        {periodNumber > 0 ? (
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-block ${
+                            periodNumber === 1 ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                            periodNumber === 2 ? 'bg-green-100 text-green-700 border border-green-200' :
+                            'bg-purple-100 text-purple-700 border border-purple-200'
+                          }`}>
+                            {periodNumber}° Período
+                          </span>
+                        ) : 'N/A'}
+                      </td>
+                      <td className="p-4 text-slate-600">{formatDate(req.startDate)} - {formatDate(req.endDate)}</td>
+                      <td className="p-4 text-center">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[req.status]}`}>
+                          {STATUS_TRANSLATION[req.status]}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleEditVacation(req.id)}
+                            title="Editar"
+                            className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteVacation(req.id)}
+                            title="Excluir"
+                            className="p-2 rounded-lg hover:bg-red-50 text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
