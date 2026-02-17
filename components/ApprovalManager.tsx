@@ -12,6 +12,24 @@ interface ApprovalManagerProps {
 export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vacations, setVacations }) => {
   const pendingVacations = vacations.filter(vac => vac.status === 'planned' || vac.status === 'pending');
 
+  // Helper function to determine the period number (1st, 2nd, 3rd) for a vacation request
+  const getVacationPeriodNumber = (vacation: VacationRequest): number => {
+    if (!vacation.acquisitionYear) return 0;
+
+    // Get all vacations for the same employee and acquisition year, sorted by start date
+    const employeeVacations = vacations
+      .filter(v =>
+        v.employeeId === vacation.employeeId &&
+        v.acquisitionYear === vacation.acquisitionYear &&
+        (v.status === 'approved' || v.status === 'planned' || v.status === 'pending')
+      )
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+    // Find the index of the current vacation and return period number (1-indexed)
+    const index = employeeVacations.findIndex(v => v.id === vacation.id);
+    return index >= 0 ? index + 1 : 0;
+  };
+
   const handleApprove = (vacationId: string) => {
     setVacations(prevVacations =>
       prevVacations.map(vac =>
@@ -52,14 +70,15 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
           <h3 className="font-bold text-blue-900">Solicitações Pendentes</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px]"> {/* Increased min-width to accommodate new column */}
+          <table className="w-full min-w-[1100px]"> {/* Increased min-width to accommodate new column */}
             <thead className="bg-slate-50 text-slate-600 text-sm">
               <tr>
                 <th className="p-3 text-left">Colaborador</th>
                 <th className="p-3 text-left">Período</th>
                 <th className="p-3 text-left">Dias</th>
                 <th className="p-3 text-left">Ano Aquisição</th>
-                <th className="p-3 text-left">Motivo</th> {/* New column for reason */}
+                <th className="p-3 text-center">N° Período</th> {/* New column for period number */}
+                <th className="p-3 text-left">Motivo</th>
                 <th className="p-3 text-left">Status</th>
                 <th className="p-3 text-center">Ações</th>
               </tr>
@@ -72,6 +91,7 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
                   const displayEndDate = formatDate(vac.endDate);
                   // Calculate days if not stored, adding +1 to include both start and end dates
                   const vacationDays = vac.days || Math.round((new Date(vac.endDate).getTime() - new Date(vac.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                  const periodNumber = getVacationPeriodNumber(vac);
                   return (
                     <tr key={vac.id}>
                       <td className="p-3">
@@ -83,6 +103,17 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
                       </td>
                       <td className="p-3 text-sm">{vacationDays}d</td>
                       <td className="p-3 text-sm">{vac.acquisitionYear || 'N/A'}</td>
+                      <td className="p-3 text-center">
+                        {periodNumber > 0 ? (
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                            periodNumber === 1 ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                            periodNumber === 2 ? 'bg-green-100 text-green-700 border border-green-200' :
+                            'bg-purple-100 text-purple-700 border border-purple-200'
+                          }`}>
+                            {periodNumber}° Período
+                          </span>
+                        ) : 'N/A'}
+                      </td>
                       <td className="p-3 text-sm text-orange-600 font-medium">
                         {vac.specialApprovalReason ? (
                           <ul className="list-disc list-inside text-xs">
@@ -120,7 +151,7 @@ export const ApprovalManager: React.FC<ApprovalManagerProps> = ({ employees, vac
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400"> {/* Updated colspan */}
+                  <td colSpan={8} className="p-8 text-center text-slate-400"> {/* Updated colspan to 8 */}
                     Nenhuma solicitação de férias pendente.
                   </td>
                 </tr>
