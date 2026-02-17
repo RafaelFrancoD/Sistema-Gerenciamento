@@ -269,7 +269,15 @@ Antes de enviar URL para cliente:
 
 ## 📞 URLs dos Clientes
 
-Após criar, adicione aqui:
+### ✅ URLs Criadas:
+
+```
+Original:        https://sistema-gerenciamento.vercel.app
+Cliente Teste:   https://sgf-cliente-teste.vercel.app
+Desenvolvimento: https://sgf-desenvolvimento.vercel.app
+```
+
+### 🔜 Adicione novas URLs aqui:
 
 ```
 Cliente 1: [Nome] - https://sgf-cliente1.vercel.app
