@@ -197,7 +197,7 @@ export const Reports: React.FC<ReportsProps> = ({ employees, vacations, setVacat
               <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap justify-end gap-3 print:hidden">
                 <button onClick={() => handleExport('csv')} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-slate-300 text-slate-600 hover:bg-slate-100"><FileIcon size={18} /> Exportar CSV</button>
                 <button onClick={() => handleExport('xlsx')} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download size={18} /> Exportar Excel</button>
-                <button onClick={handleSendEmail} disabled={selectedVacation.status !== 'approved'} className={`px-4 py-2 border rounded-lg font-medium flex items-center gap-2 ${selectedVacation.status === 'approved' ? 'border-blue-600 text-blue-600 hover:bg-blue-50' : 'border-slate-300 text-slate-400 cursor-not-allowed'}`}><Mail size={18} /> Enviar por Email</button>
+                <button onClick={handleSendEmail} className="px-4 py-2 border rounded-lg font-medium flex items-center gap-2 border-blue-600 text-blue-600 hover:bg-blue-50"><Mail size={18} /> Enviar por Email</button>
               </div>
             </div>
           ) : (

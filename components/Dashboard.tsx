@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
-} from 'recharts';
-import { AlertTriangle, CheckCircle, Users, Clock, Zap, Send, X, Mail } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Users, Clock, Zap, X } from 'lucide-react';
 import { Employee, VacationRequest } from '../types';
-import { calculateVacationDueDate, getDaysUntilDue } from '../utils/dateLogic';
 
 interface DashboardProps {
   employees: Employee[];
@@ -12,7 +8,6 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) => {
-  const [chartTimeRange, setChartTimeRange] = useState('6m'); // State for chart filter
   const [activeVacationsModalOpen, setActiveVacationsModalOpen] = useState(false);
   const [expiringVacationsModalOpen, setExpiringVacationsModalOpen] = useState(false);
   const [takenVacationsModalOpen, setTakenVacationsModalOpen] = useState(false);
@@ -73,6 +68,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
       type: 'overlap' | 'qa';
       employees: string[];
       period: { start: string; end: string };
+      conflictDays: number;
       team?: string;
     }> = [];
 
@@ -99,15 +95,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
           const emp2 = employees.find(e => e.id === v2.employeeId);
 
           if (emp1 && emp2) {
+            // Calculate actual overlap period (intersection, not union)
+            const overlapStart = start1 > start2 ? v1.startDate : v2.startDate;
+            const overlapEnd = end1 < end2 ? v1.endDate : v2.endDate;
+
+            // Calculate conflict days
+            const overlapStartDate = new Date(overlapStart);
+            const overlapEndDate = new Date(overlapEnd);
+            const conflictDays = Math.ceil((overlapEndDate.getTime() - overlapStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
             // Check if it's a QA conflict (both QAs from same team)
             if (emp1.role === 'QA' && emp2.role === 'QA' && emp1.team === emp2.team) {
               conflicts.push({
                 type: 'qa',
                 employees: [emp1.name, emp2.name],
                 period: {
-                  start: v1.startDate < v2.startDate ? v1.startDate : v2.startDate,
-                  end: v1.endDate > v2.endDate ? v1.endDate : v2.endDate
+                  start: overlapStart,
+                  end: overlapEnd
                 },
+                conflictDays,
                 team: emp1.team
               });
             } else {
@@ -116,9 +122,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                 type: 'overlap',
                 employees: [emp1.name, emp2.name],
                 period: {
-                  start: v1.startDate < v2.startDate ? v1.startDate : v2.startDate,
-                  end: v1.endDate > v2.endDate ? v1.endDate : v2.endDate
-                }
+                  start: overlapStart,
+                  end: overlapEnd
+                },
+                conflictDays
               });
             }
           }
@@ -136,48 +143,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
     );
   }, [vacations, employees]);
 
-  // --- DYNAMIC CHART DATA ---
-  const generateChartData = (vacationData: VacationRequest[], timeRange: '6m' | '1y') => {
-    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    const today = new Date();
-    const data = [];
-    
-    const monthsToDisplay = timeRange === '1y' ? 12 : 6;
-
-    // 1. Initialize data for the last N months
-    for (let i = monthsToDisplay - 1; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      const monthName = monthNames[d.getMonth()];
-      const year = d.getFullYear().toString().slice(-2);
-      data.push({ name: `${monthName}/${year}`, qtd: 0 });
-    }
-
-    // 2. Process each vacation request
-    vacationData.forEach(vacation => {
-      const start = new Date(vacation.startDate);
-      const end = new Date(vacation.endDate);
-
-      for (let day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
-        const monthIndex = day.getMonth();
-        const year = day.getFullYear();
-
-        const targetMonth = data.find(d => {
-          const [name, yr] = d.name.split('/');
-          const dMonthIndex = monthNames.indexOf(name);
-          const dYear = parseInt(yr, 10) + 2000;
-          return dMonthIndex === monthIndex && dYear === year;
-        });
-
-        if (targetMonth) {
-          targetMonth.qtd += 1;
-        }
-      }
-    });
-
-    return data;
-  };
-
-  const chartData = generateChartData(vacations, chartTimeRange as '6m' | '1y');
 
 
   return (
@@ -259,52 +224,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:gap-8">
-
-        {/* Chart Section */}
-        <div className="bg-white p-4 md:p-8 rounded-3xl shadow-lg border border-slate-100 transition-all hover:shadow-xl">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg md:text-xl font-bold text-slate-800">Tendência de Férias</h3>
-            <select 
-              value={chartTimeRange}
-              onChange={(e) => setChartTimeRange(e.target.value)}
-              className="text-sm bg-slate-50 border-none rounded-lg px-3 py-1 text-slate-600 focus:ring-0 cursor-pointer hover:bg-slate-100"
-            >
-              <option value="6m">Últimos 6 meses</option>
-              <option value="1y">Este ano</option>
-            </select>
-          </div>
-          <div className="h-64 md:h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorQtd" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                  itemStyle={{ color: '#fff' }}
-                  cursor={{ stroke: '#3b82f6', strokeWidth: 2 }}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="qtd" 
-                  stroke="#3b82f6" 
-                  strokeWidth={4}
-                  fillOpacity={1} 
-                  fill="url(#colorQtd)" 
-                  animationDuration={1000}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
 
       {/* Conflicts Section */}
       {conflictData.length > 0 && (
@@ -365,7 +284,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, vacations }) =>
                           {conflict.employees.join(' e ')}
                         </p>
                         <p className="text-sm text-slate-600">
-                          Período: {formatDate(conflict.period.start)} até {formatDate(conflict.period.end)}
+                          Período de conflito: {formatDate(conflict.period.start)} até {formatDate(conflict.period.end)}
+                        </p>
+                        <p className="text-sm text-slate-600 font-semibold mt-1">
+                          Quantidade de dias de conflito: {conflict.conflictDays} dia{conflict.conflictDays > 1 ? 's' : ''}
                         </p>
                         {conflict.type === 'qa' && (
                           <p className="text-xs text-red-700 mt-2 font-medium">
